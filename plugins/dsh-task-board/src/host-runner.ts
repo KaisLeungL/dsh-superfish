@@ -546,12 +546,14 @@ export class HostExecutionRunner {
     // the Host process working directory (the desktop app's profile directory) —
     // never the project the user was in when the card was written. A deployment
     // with no workspace to offer gets a refusal below, not that fallback.
-    const workspaceId = options.workspaceId ?? task.handover?.workspaceId ?? task.workspaceId ?? this.recentWorkspaceId()
+    const legacyWorker = (task.handover?.mode ?? task.mode) === 'workspace-superagent-worker'
+    const workspaceId = options.workspaceId ?? task.handover?.workspaceId ?? (legacyWorker && task.projectId ? task.projectId : task.workspaceId) ?? task.projectId ?? this.recentWorkspaceId()
     const assertContinuing = (): void => {
       if (options.shouldContinue?.() === false) throw new Error('execution cancellation requested during launch')
     }
     assertContinuing()
-    const mode = options.agentPreset ?? task.handover?.mode ?? task.mode
+    const rawMode = options.agentPreset ?? task.handover?.mode ?? task.mode
+    const mode = rawMode === 'workspace-superagent-worker' ? undefined : rawMode
     const permission = task.handover?.permission ?? task.permission
 
     if (workspaceId !== undefined && this.workspaceRegistry !== undefined) {

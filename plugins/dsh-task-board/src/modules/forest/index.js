@@ -66,6 +66,67 @@ export async function apply(ctx) {
       }
     },
   }));
+  ctx.inject(['webServer'], webCtx => {
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/api/task-forest/events',
+      handler(req, res) {
+        if (req.method !== 'GET') {
+          res.writeHead(405);
+          res.end();
+          return;
+        }
+        const admission = ctx.connection.admit(req);
+        if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
+          const status = 'rejection' in admission ? admission.rejection : 403;
+          res.writeHead(status);
+          res.end(status === 401 ? 'unauthorized' : 'forbidden');
+          return;
+        }
+        service().then(forest => {
+          if (req.destroyed || res.writableEnded || res.destroyed) return;
+          res.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache, no-transform',
+            'x-accel-buffering': 'no',
+            connection: 'keep-alive',
+          });
+          let ended = false;
+          let off = () => {};
+          let heartbeat;
+          const close = () => {
+            if (ended) return;
+            ended = true;
+            off();
+            clearInterval(heartbeat);
+            streams.delete(close);
+            if (!res.writableEnded && !res.destroyed) res.end();
+          };
+          const write = chunk => {
+            if (ended || res.writableEnded || res.destroyed) return;
+            res.write(chunk, err => { if (err) close(); });
+          };
+          const send = view => {
+            write('data: ' + JSON.stringify(view) + '\n\n');
+          };
+          off = forest.subscribe(send);
+          streams.add(close);
+          req.once('close', close);
+          res.once('close', close);
+          res.on('error', close);
+          heartbeat = setInterval(() => {
+            send(forest.snapshot());
+          }, 25000);
+          heartbeat.unref?.();
+          send(forest.snapshot());
+        }).catch(error => {
+          if (res.writableEnded || res.destroyed) return;
+          res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+          res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+        });
+      },
+    }));
+  });
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/task-forest/events', methods: ['GET'], requestBody: 'buffered',
     async fetch(request) {

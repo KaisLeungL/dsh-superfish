@@ -5,6 +5,8 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const unavailable = id => ({ status: 'unavailable', capability: id });
 const hasBoardScope = (scope, info) => scope.allBoardProjects === true &&
   info.id === 'task-board.list' && info.provider === '@local/dsh-workspace-context/task-board' && info.scope === 'project';
+const hasSessionScope = info =>
+  info.id === 'session.list' && info.provider === '@local/dsh-workspace-context/session' && info.scope === 'workspace';
 
 function moduleName(ctx) {
   for (let fiber = ctx?.fiber; fiber; fiber = fiber.parent?.fiber) {
@@ -84,11 +86,19 @@ export function apply(ctx) {
     catalog(access) {
       access.assertCurrent();
       lifetime.signal.throwIfAborted();
-      const capabilities = catalog(access.grants).map(info => hasBoardScope(access.scope, info) ? { ...info, readScope: 'all-board-projects' } : info);
+      const capabilities = catalog(access.grants).map(info =>
+        hasBoardScope(access.scope, info) ? { ...info, readScope: 'all-board-projects' } :
+        hasSessionScope(info) ? { ...info, readScope: 'all-sessions' } : info);
       return { status: 'ok', protocol: 1, workspaceId: access.scope.workspaceId, capabilities };
     },
     status(grants) {
       return Object.entries(grants).map(([id, provider]) => ({ id, available: !!find(provider, id) }));
+    },
+    listRegistered() {
+      lifetime.signal.throwIfAborted();
+      return [...entries.values()]
+        .map(entry => ({ ...structuredClone(entry.info), status: 'available' }))
+        .sort((a, b) => a.id.localeCompare(b.id) || a.provider.localeCompare(b.provider));
     },
     async query(access, input) {
       access.assertCurrent();
@@ -105,7 +115,8 @@ export function apply(ctx) {
           (input.cursor !== undefined && (typeof input.cursor !== 'string' || input.cursor.length > 36))) return { status: 'invalid_query', capability: id };
       const { workspaceId, projectIds } = access.scope;
       const allBoardProjects = hasBoardScope(access.scope, entry.info);
-      const scope = Object.freeze({ workspaceId, projectIds, ...(allBoardProjects && { allBoardProjects: true }) });
+      const allSessions = hasSessionScope(entry.info);
+      const scope = Object.freeze({ workspaceId, projectIds, ...(allBoardProjects && { allBoardProjects: true }), ...(allSessions && { allSessions: true }) });
       const queryKey = JSON.stringify([access.binding, scope, filter, limit]);
       const page = input.cursor === undefined ? undefined : cursors.get(input.cursor);
       if (input.cursor !== undefined && (!page || page.entry !== entry || page.queryKey !== queryKey || page.expiresAt <= Date.now())) {
@@ -129,6 +140,7 @@ export function apply(ctx) {
           result.items.some(item => !record(item) ||
             (allBoardProjects ? !(item.workspaceId === null || typeof item.workspaceId === 'string') ||
               !(item.projectId === null || typeof item.projectId === 'string') :
+              allSessions ? !(item.workspaceId === null || typeof item.workspaceId === 'string') :
               item.workspaceId !== workspaceId || (entry.info.scope === 'project' && !projectIds.includes(item.projectId))) ||
             !record(item.ref) || typeof item.ref.kind !== 'string' || typeof item.ref.id !== 'string' || !item.ref.id)) return unavailable(id);
       let items;
@@ -145,7 +157,7 @@ export function apply(ctx) {
         cursors.set(nextCursor, { entry, queryKey, revision: result.revision, offset: offset + items.length, expiresAt: Date.now() + 300_000 });
       }
       return { status: 'ok', capability: id, source: entry.info.source,
-        ...(allBoardProjects ? { readScope: 'all-board-projects' } : { workspaceId }),
+        ...(allBoardProjects ? { readScope: 'all-board-projects' } : allSessions ? { readScope: 'all-sessions' } : { workspaceId }),
         readAt: new Date().toISOString(), revision: result.revision, items, complete: !result.more, ...(nextCursor && { nextCursor }) };
     },
   });

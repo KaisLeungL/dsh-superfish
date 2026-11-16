@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "title": "Fat Fish",
+    "description": "Hi, I'm Fat Fish! I help you keep track of todos, check progress, set reminders, and delegate work so your day stays organized."
+  },
+  "ui": {
+    "title": "大肥鱼",
+    "eyebrow": "Workspace",
+    "heading": "Steward runtime needs attention",
+    "description": "Check the trusted host assembly and dependencies. Fat Fish 1.0 provides federated memory, procedural skills, long-horizon goals, task board delegation, and lifecycle controls.",
+    "dependencies": "Runtime dependencies",
+    "board": "Shared task board",
+    "admission": "Native input admission",
+    "available": "Detected",
+    "missing": "Unavailable",
+    "loading": "Checking runtime dependencies…",
+    "unreachable": "The host status could not be read. Check whether the plugin is enabled.",
+    "boundary": "Tasks continue to use the existing board. This entry does not create a replacement ledger.",
+    "settingsIntro": "Choose the DSH model and reasoning effort for the steward chat.",
+    "settingsModel": "Model",
+    "settingsEffort": "Reasoning effort",
+    "settingsMode": "Mode",
+    "settingsStandard": "Standard (read-only tools)",
+    "settingsSelectModel": "Select a model",
+    "settingsDefaultEffort": "Model default",
+    "settingsEffort.off": "Off",
+    "settingsEffort.low": "Low",
+    "settingsEffort.medium": "Medium",
+    "settingsEffort.high": "High",
+    "settingsEffort.max": "Max",
+    "settingsSave": "Save",
+    "settingsSaved": "Saved",
+    "settingsLoading": "Loading steward settings…",
+    "settingsCatalogError": "Could not load the DSH model list.",
+    "settingsUnavailable": "The steward chat is unavailable. Check the connection and authorization."
+  }
+}

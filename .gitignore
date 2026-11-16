@@ -14,5 +14,6 @@ lib/
 
 .typert/
 reference/
+*.tgz
 
 .superagent-*-lab/

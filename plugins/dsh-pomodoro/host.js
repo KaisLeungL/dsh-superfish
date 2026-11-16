@@ -51,6 +51,61 @@ export async function apply(ctx) {
     },
   }));
 
+  ctx.inject?.(['webServer'], webCtx => {
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/api/local-pomodoro/events',
+      handler(req, res) {
+        if (req.method !== 'GET') {
+          res.writeHead(405);
+          res.end();
+          return;
+        }
+        const admission = ctx.connection.admit(req);
+        if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
+          const status = 'rejection' in admission ? admission.rejection : 403;
+          res.writeHead(status);
+          res.end(status === 401 ? 'unauthorized' : 'forbidden');
+          return;
+        }
+        res.writeHead(200, {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache, no-transform',
+          'x-accel-buffering': 'no',
+          connection: 'keep-alive',
+        });
+        let ended = false;
+        let heartbeat;
+        let off = () => {};
+        const close = () => {
+          if (ended) return;
+          ended = true;
+          clearInterval(heartbeat);
+          off();
+          streams.delete(close);
+          if (!res.writableEnded && !res.destroyed) res.end();
+        };
+        const write = chunk => {
+          if (ended || res.writableEnded || res.destroyed) return;
+          res.write(chunk, err => { if (err) close(); });
+        };
+        const send = state => {
+          write('data: ' + JSON.stringify({ ...state, serverNow: Date.now() }) + '\n\n');
+        };
+        off = clock.subscribe(send);
+        streams.add(close);
+        req.once('close', close);
+        res.once('close', close);
+        res.on('error', close);
+        heartbeat = setInterval(() => {
+          write(': keepalive\n\n');
+        }, 25_000);
+        heartbeat.unref?.();
+        service.operate({ action: 'status' }).then(send, close);
+      },
+    }));
+  });
+
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/local-pomodoro/events',
     methods: ['GET'],

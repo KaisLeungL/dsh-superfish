@@ -123,10 +123,14 @@ for (const [name, peerRange] of Object.entries(pkg.peerDependencies ?? {})) {
   if (pkg.peerDependenciesMeta?.[name]?.optional !== true) {
     fail(`package.json: peerDependenciesMeta.${name}.optional must be true; host modules must not be auto-installed`)
   }
-  if (name.startsWith('@deepseek-ai/dsh-') && peerRange !== DSH_COMPAT_RANGE) {
-    fail(`package.json: peerDependencies.${name} is ${peerRange}; expected ${DSH_COMPAT_RANGE}`)
-  }
-  if (pkg.devDependencies?.[name] !== peerRange) {
+  if (name.startsWith('@deepseek-ai/dsh-')) {
+    if (peerRange !== DSH_COMPAT_RANGE) {
+      fail(`package.json: peerDependencies.${name} is ${peerRange}; expected ${DSH_COMPAT_RANGE}`)
+    }
+    if (pkg.devDependencies?.[name] !== DSH_SOURCE_VERSION) {
+      fail(`package.json: devDependencies.${name} must match DSH_SOURCE_VERSION (${DSH_SOURCE_VERSION})`)
+    }
+  } else if (pkg.devDependencies?.[name] !== peerRange) {
     fail(`package.json: devDependencies.${name} must match its exact peer version`)
   }
 }

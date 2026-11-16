@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { apply } from '../index.js';
+import { apply as applySession } from '../session.js';
 
 function fixture() {
   let service, close;
@@ -75,5 +76,100 @@ test('读取过程中卸载或撤回授权时丢弃在途结果', async () => {
   active = false;
   finish(result);
   await assert.rejects(revoked, /授权已撤回/);
+  close();
+});
+
+test('session.list 能力默认暴露 all-sessions 范围并跨工作区汇总已完成会话', async () => {
+  const { service, owner, access, close } = fixture();
+  let closeSession;
+  applySession({
+    ...owner('@local/dsh-workspace-context/session'),
+    workspaceContext: service,
+    workspaceRegistry: {
+      list: () => [
+        { id: 'one', path: '/ws/one', title: '工作区一', sessionIds: ['s-one'] },
+        { id: 'two', path: '/ws/two', title: '工作区二', sessionIds: ['s-two'] },
+      ],
+      archivedSessionIds: [],
+    },
+    sessionPersistence: {
+      list: async () => [
+        { header: { id: 's-one', createdAt: 1000, cwd: '/ws/one' } },
+        { header: { id: 's-two', createdAt: 2000, cwd: '/ws/two' } },
+        { header: { id: 's-router', createdAt: 3000, cwd: '/ws/one', agentPreset: 'workspace-superagent-router' } },
+      ],
+    },
+    sessions: {
+      get: id => {
+        if (id === 's-one') {
+          return {
+            header: { id: 's-one', createdAt: 1000, cwd: '/ws/one' },
+            snapshotEvents: () => [
+              { id: 'e1', time: 1100, type: 'user/message', data: { content: [{ type: 'text', text: '修复登录鉴权' }] } },
+              { id: 'e2', time: 1200, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '已修复登录鉴权逻辑' }] } } },
+              { id: 'e3', time: 1300, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+            ],
+          };
+        }
+        if (id === 's-two') {
+          return {
+            header: { id: 's-two', createdAt: 2000, cwd: '/ws/two' },
+            snapshotEvents: () => [
+              { id: 'e4', time: 2100, type: 'session/title', data: { title: '跨工作区接口重构' } },
+              { id: 'e5', time: 2200, type: 'user/message', data: { content: [{ type: 'text', text: '重构订单同步接口' }] } },
+              { id: 'e6', time: 2300, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '订单同步接口重构完成并通过测试' }] } } },
+              { id: 'e7', time: 2400, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+            ],
+          };
+        }
+        return undefined;
+      },
+    },
+    agents: { get: () => undefined },
+    effect: setup => { closeSession = setup(); },
+  });
+  const sessionAccess = { ...access, grants: { 'session.list': '@local/dsh-workspace-context/session' } };
+  const cat = service.catalog(sessionAccess);
+  assert.equal(cat.capabilities[0].status, 'available');
+  assert.equal(cat.capabilities[0].readScope, 'all-sessions');
+  const res = await service.query(sessionAccess, { capability: 'session.list', filter: { status: 'completed' } });
+  assert.equal(res.status, 'ok');
+  assert.equal(res.readScope, 'all-sessions');
+  assert.deepEqual(res.items.map(i => [i.sessionId, i.workspaceId, i.title]), [
+    ['s-two', 'two', '跨工作区接口重构'],
+    ['s-one', 'one', '修复登录鉴权'],
+  ]);
+  closeSession?.();
+  close();
+});
+
+test('listRegistered 暴露宿主已挂载候选插件元信息且随注销实时移除', () => {
+  const { service, owner, base, close } = fixture();
+  const offA = service.register(owner('@local/dsh-pomodoro-clock'), {
+    ...base,
+    id: 'pomodoro.focus',
+    source: '番茄钟专注计时器',
+    description: '读取专注计时统计',
+    scope: 'workspace',
+    read: () => ({ items: [], more: false, revision: '1' }),
+  });
+  const offB = service.register(owner('@example/context'), {
+    ...base,
+    read: () => ({ items: [], more: false, revision: '1' }),
+  });
+  assert.deepEqual(
+    service.listRegistered().map(item => [item.id, item.provider, item.source, item.scope]),
+    [
+      ['example.list', '@example/context', '示例', 'project'],
+      ['pomodoro.focus', '@local/dsh-pomodoro-clock', '番茄钟专注计时器', 'workspace'],
+    ],
+  );
+  offA();
+  assert.deepEqual(
+    service.listRegistered().map(item => [item.id, item.provider]),
+    [['example.list', '@example/context']],
+  );
+  offB();
+  assert.deepEqual(service.listRegistered(), []);
   close();
 });

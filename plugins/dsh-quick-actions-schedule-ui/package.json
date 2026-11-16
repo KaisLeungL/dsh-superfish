@@ -16,10 +16,10 @@
     "LICENSE",
     "source-identity.json"
   ],
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
   "dsh": {
-    "engines": {
-      "dsh": "=0.2.2-rc.1"
-    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

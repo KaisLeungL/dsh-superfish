@@ -31,9 +31,20 @@ export interface ContextAccess {
   readonly signal: AbortSignal;
   assertCurrent(): void;
 }
+export interface RegisteredContextCapabilityInfo {
+  readonly protocol: 1;
+  readonly id: string;
+  readonly source: string;
+  readonly provider: string;
+  readonly description: string;
+  readonly scope: 'workspace' | 'project';
+  readonly filters: ContextCapability['filters'];
+  readonly status: 'available';
+}
 export interface WorkspaceContextService {
   register(owner: unknown, capability: ContextCapability): () => void;
   catalog(access: ContextAccess): unknown;
   status(grants: ContextAccess['grants']): readonly { id: string; available: boolean }[];
+  listRegistered?(): readonly RegisteredContextCapabilityInfo[];
   query(access: ContextAccess, input: unknown): Promise<unknown>;
 }
