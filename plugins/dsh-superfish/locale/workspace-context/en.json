@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Superfish · Workspace Context Hub",
+    "description": "Registers and governs read-only workspace context sources, capability catalogs, scope isolation, and pagination."
+  }
+}

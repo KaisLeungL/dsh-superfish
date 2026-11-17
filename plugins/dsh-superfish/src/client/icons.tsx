@@ -10,7 +10,7 @@ export type IconName =
   | 'clock' | 'calendar' | 'route' | 'check' | 'close'
   | 'board' | 'link' | 'edit' | 'refresh' | 'camera'
   | 'sparkle' | 'cpu' | 'layers' | 'zap' | 'terminal' | 'user'
-  | 'list' | 'sliders' | 'copy';
+  | 'list' | 'sliders' | 'copy' | 'archive' | 'calendar-check';
 
 const paths: Record<IconName, React.ReactNode> = {
   panel: <><rect x="3" y="4.5" width="18" height="15" rx="2.5" /><path d="M15 4.5v15" /></>,
@@ -37,6 +37,8 @@ const paths: Record<IconName, React.ReactNode> = {
   list: <><path d="M9.5 7h10M9.5 12h10M9.5 17h10" /><circle cx="5.25" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="5.25" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="5.25" cy="17" r="1" fill="currentColor" stroke="none" /></>,
   sliders: <><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="17" r="2" /></>,
   copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
+  archive: <><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8M10 12h4" /></>,
+  'calendar-check': <><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M3.5 9.5h17M8 3v4M16 3v4" /><path d="m9 14.5 2 2 4-4" /></>,
 };
 
 export function Icon({ name, size = 16, strokeWidth = 1.5, className }: {

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Superfish · Schedule Context Adapter",
+    "description": "Provides read-only queries of upcoming schedule tasks, status, and next trigger times for the active workspace."
+  }
+}

@@ -101,6 +101,7 @@ export const P1_MATERIALS_META: MaterialsMetaMap = Object.freeze({
     },
     events: {
       'dsh.personal.toggleTodo': '直接在卡片中勾选或取消勾选待办状态',
+      'dsh.personal.moveTodoToday': '将即将待办迁移至今日待办（今天完成）',
       'dsh.personal.moveTodoTomorrow': '将未完成待办顺延至明天',
       'dsh.personal.createTodo': '将无 ID 的推荐待办项一键加入个人今日待办',
       'dsh.taskBoard.open': '打开待办关联的看板任务卡片',

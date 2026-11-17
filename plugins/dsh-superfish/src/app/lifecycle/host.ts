@@ -19,6 +19,7 @@ import { MemoryService } from '../memory/service.js';
 import { MemoryConsolidator } from '../memory/consolidator.js';
 import { DynamicSkillRegistry } from '../../skills/dynamic-skills.js';
 import { GoalService } from '../goals/service.js';
+import { DynamicPluginBridge, withDynamicPluginContext, type DynamicBridgeSpec } from '../plugins/bridge.js';
 import { PluginSpaceRegistry } from '../plugins/registry.js';
 import { EventMonitor } from '../routines/event-monitor.js';
 import { discoverDshOnboardingMemory, importDshOnboardingMemory, type OnboardingSessionBrief } from '../memory/onboarding.js';
@@ -600,6 +601,13 @@ export function installHealthHost(ctx: Context): void {
       }
     };
     onBoardUpdated = () => { void syncRuntimeEvents(); };
+    let pluginRegistry: PluginSpaceRegistry;
+    const dynamicPluginBridge = new DynamicPluginBridge({
+      host: () => scoped as unknown as { get?(name: string): unknown },
+      workspacePath: () => workspace.path,
+      isPluginEnabled: pkg => pluginRegistry ? pluginRegistry.isPluginEnabled(pkg) : false,
+      getManualBridgeSpecs: () => pluginRegistry ? pluginRegistry.manualBridgeSpecs() : new Map(),
+    });
     let cachedBaseContext: ContextService | undefined;
     let cachedCompositeContext: ContextService | undefined;
     const resolveContextService = (): ContextService | undefined => {
@@ -609,15 +617,17 @@ export function installHealthHost(ctx: Context): void {
         const boundBase = contextService;
         const withSessions = withSessionContext(() => boundBase, () => runtime?.sessionReads);
         const withTodos = withTodoContext(() => withSessions, () => runtime?.todoReads);
-        cachedCompositeContext = withMemoryContext(() => withTodos, () => runtime?.memoryReads);
+        const withMemories = withMemoryContext(() => withTodos, () => runtime?.memoryReads);
+        cachedCompositeContext = withDynamicPluginContext(() => withMemories, () => dynamicPluginBridge);
       }
       return cachedCompositeContext;
     };
-    const pluginRegistry = new PluginSpaceRegistry({
+    pluginRegistry = new PluginSpaceRegistry({
       filePath: store.path + '.plugins.json',
       baseGrants: assembly.contextGrants ?? BOARD_CONTEXT,
       contextService: () => contextService,
       genuiPlugin: () => genuiPlugin,
+      dynamicBridge: () => dynamicPluginBridge,
       policyRevision: () => {
         try {
           return runtimeConfig.currentPolicy(undefined).revision;
@@ -658,6 +668,8 @@ export function installHealthHost(ctx: Context): void {
       memory,
       dynamicSkills: () => dynamicSkills,
       goals: () => goals,
+      pluginBridge: () => dynamicPluginBridge,
+      pluginRegistry: () => pluginRegistry,
       externalConnector: {},
       enableWorkerSandbox: true,
       ...(assembly.contextGrants && {
@@ -1055,15 +1067,26 @@ export function installHealthHost(ctx: Context): void {
           const targetSession = store.manager().sessionId || sessionId;
           if (!targetSession) throw Error('CHAT_SESSION_CHANGED');
           const packageName = typeof req.packageName === 'string' ? req.packageName.trim() : '';
-          const capabilityId = typeof req.capabilityId === 'string' ? req.capabilityId.trim() : '';
+          const capabilityId = typeof req.capabilityId === 'string' && req.capabilityId.trim() ? req.capabilityId.trim() : undefined;
           const title = typeof req.title === 'string' ? req.title.trim() : undefined;
           const description = typeof req.description === 'string' ? req.description.trim() : undefined;
+          const bridge = req.bridge && typeof req.bridge === 'object' && !Array.isArray(req.bridge)
+            ? (req.bridge as DynamicBridgeSpec)
+            : undefined;
           pluginRegistry.registerManualPlugin({
             packageName,
-            capabilityId,
+            ...(capabilityId ? { capabilityId } : {}),
             ...(title ? { title } : {}),
             ...(description ? { description } : {}),
+            ...(bridge ? { bridge } : {}),
           });
+          const base = await personal.read(targetSession);
+          caller.assertCurrent();
+          return enrichPersonalResult(base);
+        }
+        if (req?.op === 'plugin.discover') {
+          const targetSession = store.manager().sessionId || sessionId;
+          if (!targetSession) throw Error('CHAT_SESSION_CHANGED');
           const base = await personal.read(targetSession);
           caller.assertCurrent();
           return enrichPersonalResult(base);

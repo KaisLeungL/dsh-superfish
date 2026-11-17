@@ -1,9 +1,5 @@
 node_modules/
 lib/
-!plugins/dsh-quick-actions-schedule-host/lib/
-!plugins/dsh-quick-actions-schedule-host/lib/**
-!plugins/dsh-quick-actions-schedule-ui/lib/
-!plugins/dsh-quick-actions-schedule-ui/lib/**
 .dsh-build/
 .local/
 .DS_Store

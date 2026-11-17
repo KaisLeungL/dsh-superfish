@@ -32,6 +32,7 @@ const suites = [
   'storage',
   'task-board-read',
   'tools',
+  'workspace-context',
 ];
 const testFiles = [];
 for (const suite of suites) {

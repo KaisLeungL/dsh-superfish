@@ -5,7 +5,7 @@ import { CallerAuthority, CallerDenied, SCHEDULE_PRESET, SESSION_TOOLS, WORKER_P
 import type { ContextAccess, ContextService } from './context.js';
 
 export const SESSION_LIST_CAPABILITY = 'session.list';
-export const SESSION_LIST_PROVIDER = '@local/dsh-workspace-context/session';
+export const SESSION_LIST_PROVIDER = '@local/dsh-superfish/workspace-context/session';
 
 export type SessionStatus = 'running' | 'needs_input' | 'completed' | 'blank';
 

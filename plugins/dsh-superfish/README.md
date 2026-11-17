@@ -15,17 +15,18 @@
 4. **长周期目标与事件自驱（Autonomous Goals & EventMonitor）**：多阶段里程碑绑定看板任务卡，监听看板执行完成事件自动推进下一里程碑并派工。
 5. **超级执行力与安全哨兵（Super Execution & Security Sentinel）**：看板建卡与定时任务多卡草案、`read-only`/`workspace-write` 权限与 ACP `mode` 委派、Worker 沙盒文件读写/白名单命令、防 SSRF 外部连接器与敏感凭据自动脱敏。
 6. **右侧四栏工作台**：集成工作概览、记忆库、技能库、主理配置四栏面板，支持 OpenTiny GenUI 动态卡片渲染。
+7. **内置 GenUI 生成式界面、上下文总线与定时任务协同**：随包集成 OpenTiny GenUI 中间层宿主与客户端注册中心（`@local/dsh-superfish/genui` / `superagentGenuiClient`）、只读工作区上下文总线（`@local/dsh-superfish/workspace-context` 及看板、定时任务、跨会话适配器）、定时任务宿主生命周期服务（`@local/dsh-superfish/schedule-host`）以及客户端定时任务面板联动定位服务（`scheduleNavigation`），单包安装即可闭环使用。
 
 ## 构建、校验与测试
 
 ```sh
-# 构建类型声明与 Host/Preset/Client 产物
+# 构建类型声明与 Host/Preset/Client/Subpath 产物
 pnpm --filter @local/dsh-superfish run build
 
 # 运行产物完整性、双语键与浏览器沙盒导入合规检查
 pnpm --filter @local/dsh-superfish run check
 
-# 运行全部 15 个测试套件（290 项单元与集成测试）
+# 运行全部 16 个测试套件（291 项单元与集成测试）
 pnpm --filter @local/dsh-superfish test
 
 # 打包发布产物 (.tgz)

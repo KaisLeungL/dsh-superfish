@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { CapturedTask } from '../projections/types.js';
 
 interface TodoRow {
-  id: string; title: string; local_date: string; done: number; revision: number; board_task_id: string | null;
+  id: string; title: string; local_date: string; done: number; revision: number; board_task_id: string | null; archived?: number;
 }
 interface ScheduleEntry {
   id: string; title: string; status: 'active' | 'paused' | 'ended'; kind: string;
@@ -35,6 +35,7 @@ export interface PublicTodo {
   revision: number;
   boardTaskId?: string;
   sourceUnavailable?: boolean;
+  archived?: boolean;
 }
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const date = /^\d{4}-\d{2}-\d{2}$/;
@@ -45,7 +46,8 @@ function validDate(value: unknown): value is string {
 }
 function asTodo(row: TodoRow): PublicTodo {
   return { id: row.id, title: row.title, localDate: row.local_date, done: row.done === 1, revision: row.revision,
-    ...(row.board_task_id ? { boardTaskId: row.board_task_id } : {}) };
+    ...(row.board_task_id ? { boardTaskId: row.board_task_id } : {}),
+    ...(row.archived === 1 ? { archived: true } : {}) };
 }
 function timing(item: ScheduleEntry): string {
   const time = item.time?.slice(0, 5) ?? '';
@@ -62,10 +64,14 @@ export class PersonalService {
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS todo (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, title TEXT NOT NULL,
         local_date TEXT NOT NULL, done INTEGER NOT NULL CHECK(done IN (0,1)), revision INTEGER NOT NULL,
-        board_task_id TEXT, created_at INTEGER NOT NULL) STRICT;
+        board_task_id TEXT, created_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1))) STRICT;
       CREATE TABLE IF NOT EXISTS request_receipt (request_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL) STRICT;
       CREATE UNIQUE INDEX IF NOT EXISTS todo_board_date ON todo(workspace_id,local_date,board_task_id)
         WHERE board_task_id IS NOT NULL;`);
+    const cols = this.#db.prepare('PRAGMA table_info(todo)').all() as { name?: string }[];
+    if (!cols.some(col => col.name === 'archived')) {
+      this.#db.exec('ALTER TABLE todo ADD COLUMN archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1))');
+    }
     const owner = this.#db.prepare("SELECT value FROM metadata WHERE key='workspace'").get() as { value?: string } | undefined;
     if (typeof owner?.value === 'string' && owner.value !== binding.workspaceId) {
       this.#db.exec('BEGIN IMMEDIATE');
@@ -109,7 +115,7 @@ export class PersonalService {
   }
   listTodos(): readonly PublicTodo[] {
     this.binding.assertCurrent();
-    return this.loadTodos().todos;
+    return this.loadTodos().todos.filter(item => !item.archived);
   }
   clearAll(): void {
     this.#db.exec('BEGIN IMMEDIATE');
@@ -162,7 +168,7 @@ export class PersonalService {
     const keys = Object.keys(request);
     if (keys.some(k => !['op','id','revision','title','done','localDate','requestId','boardTaskId'].includes(k)) ||
         typeof request.requestId !== 'string' || !uuid.test(request.requestId) ||
-        !['create','update','move'].includes(String(request.op))) throw Error('PERSONAL_INVALID');
+        !['create','update','move','archive','archive_completed'].includes(String(request.op))) throw Error('PERSONAL_INVALID');
     const hash = createHash('sha256').update(JSON.stringify(request)).digest('hex');
     const title = typeof request.title === 'string' ? request.title.trim() : undefined;
     if (title !== undefined && (!title || title.length > 160)) throw Error('PERSONAL_INVALID');
@@ -172,8 +178,11 @@ export class PersonalService {
       if (!title || !validDate(request.localDate)) throw Error('PERSONAL_INVALID');
       if (request.boardTaskId !== undefined && (typeof request.boardTaskId !== 'string' ||
           !this.candidates().some(task => task.id === request.boardTaskId))) throw Error('PERSONAL_BOARD_UNAVAILABLE');
+    } else if (request.op === 'archive_completed') {
+      if (keys.some(k => !['op','requestId'].includes(k))) throw Error('PERSONAL_INVALID');
     } else if (typeof request.id !== 'string' || !uuid.test(request.id) ||
-      !Number.isSafeInteger(request.revision) || Number(request.revision) < 1 || request.boardTaskId !== undefined) throw Error('PERSONAL_INVALID');
+      !Number.isSafeInteger(request.revision) || Number(request.revision) < 1 || request.boardTaskId !== undefined ||
+      (request.op === 'archive' && keys.some(k => !['op','id','revision','requestId'].includes(k)))) throw Error('PERSONAL_INVALID');
     this.current(session);
     this.#db.exec('BEGIN IMMEDIATE');
     try {
@@ -184,15 +193,35 @@ export class PersonalService {
         return this.read(session);
       }
       if (request.op === 'create') {
-        this.#db.prepare('INSERT INTO todo VALUES(?,?,?,?,0,1,?,?)').run(randomUUID(),this.binding.workspaceId,title!,
+        if (typeof request.boardTaskId === 'string') {
+          this.#db.prepare('DELETE FROM todo WHERE workspace_id=? AND local_date=? AND board_task_id=? AND archived=1')
+            .run(this.binding.workspaceId, String(request.localDate), request.boardTaskId);
+        }
+        this.#db.prepare('INSERT INTO todo(id,workspace_id,title,local_date,done,revision,board_task_id,created_at,archived) VALUES(?,?,?,?,0,1,?,?,0)').run(randomUUID(),this.binding.workspaceId,title!,
           String(request.localDate),typeof request.boardTaskId === 'string' ? request.boardTaskId : null,Date.now());
+      } else if (request.op === 'archive_completed') {
+        this.#db.prepare('UPDATE todo SET archived=1,revision=revision+1 WHERE workspace_id=? AND done=1 AND archived=0')
+          .run(this.binding.workspaceId);
       } else {
         const old = this.#db.prepare('SELECT * FROM todo WHERE id=? AND workspace_id=?').get(String(request.id),this.binding.workspaceId) as unknown as TodoRow | undefined;
         if (!old || old.revision !== request.revision) throw Error('REVISION_CONFLICT');
-        if (title !== undefined && old.board_task_id && !this.candidates().some(task => task.id === old.board_task_id)) throw Error('PERSONAL_BOARD_UNAVAILABLE');
-        this.#db.prepare('UPDATE todo SET title=?,local_date=?,done=?,revision=revision+1 WHERE id=? AND revision=?')
-          .run(title ?? old.title, typeof request.localDate === 'string' ? request.localDate : old.local_date,
-            typeof request.done === 'boolean' ? Number(request.done) : old.done,old.id,old.revision);
+        if (request.op === 'archive') {
+          if (old.done !== 1) throw Error('PERSONAL_INVALID');
+          this.#db.prepare('UPDATE todo SET archived=1,revision=revision+1 WHERE id=? AND revision=?')
+            .run(old.id, old.revision);
+        } else {
+          if (old.done === 1 && (request.op === 'move' || title !== undefined || request.localDate !== undefined)) {
+            throw Error('PERSONAL_COMPLETED_READONLY');
+          }
+          if (title !== undefined && old.board_task_id && !this.candidates().some(task => task.id === old.board_task_id)) throw Error('PERSONAL_BOARD_UNAVAILABLE');
+          const nextDate = typeof request.localDate === 'string' ? request.localDate : old.local_date;
+          if (old.board_task_id && nextDate !== old.local_date) {
+            this.#db.prepare('DELETE FROM todo WHERE workspace_id=? AND local_date=? AND board_task_id=? AND id<>?').run(this.binding.workspaceId, nextDate, old.board_task_id, old.id);
+          }
+          this.#db.prepare('UPDATE todo SET title=?,local_date=?,done=?,revision=revision+1 WHERE id=? AND revision=?')
+            .run(title ?? old.title, nextDate,
+              typeof request.done === 'boolean' ? Number(request.done) : old.done,old.id,old.revision);
+        }
       }
       this.#db.prepare('INSERT INTO request_receipt VALUES(?,?)').run(request.requestId,hash);
       this.current(session);

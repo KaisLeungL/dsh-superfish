@@ -1,4 +1,0 @@
-# 安装大肥鱼 GenUI 中间层插件，向超级大肥鱼注入 superagentGenui 与前端物料注册中心。
-- insert:
-    - id: superagent-genui
-      name: '@local/dsh-superfish-genui'

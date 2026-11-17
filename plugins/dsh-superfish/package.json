@@ -19,6 +19,48 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./schedule-host": {
+      "types": "./lib/types/schedule-host/index.d.ts",
+      "default": "./lib/schedule-host/index.js"
+    },
+    "./schedule-host/locale/zh.json": "./locale/schedule-host/zh.json",
+    "./schedule-host/locale/en.json": "./locale/schedule-host/en.json",
+    "./schedule-host/icon": "./icon.png",
+    "./genui": {
+      "types": "./lib/types/genui/index.d.ts",
+      "default": "./lib/genui/index.js"
+    },
+    "./genui/locale/zh.json": "./locale/genui/zh.json",
+    "./genui/locale/en.json": "./locale/genui/en.json",
+    "./genui/icon": "./icon.png",
+    "./workspace-context": {
+      "types": "./lib/types/workspace-context/index.d.ts",
+      "default": "./lib/workspace-context/index.js"
+    },
+    "./workspace-context/locale/zh.json": "./locale/workspace-context/zh.json",
+    "./workspace-context/locale/en.json": "./locale/workspace-context/en.json",
+    "./workspace-context/icon": "./icon.png",
+    "./workspace-context/task-board": {
+      "types": "./lib/types/workspace-context/task-board.d.ts",
+      "default": "./lib/workspace-context/task-board.js"
+    },
+    "./workspace-context/task-board/locale/zh.json": "./locale/workspace-context-task-board/zh.json",
+    "./workspace-context/task-board/locale/en.json": "./locale/workspace-context-task-board/en.json",
+    "./workspace-context/task-board/icon": "./icon.png",
+    "./workspace-context/schedule": {
+      "types": "./lib/types/workspace-context/schedule.d.ts",
+      "default": "./lib/workspace-context/schedule.js"
+    },
+    "./workspace-context/schedule/locale/zh.json": "./locale/workspace-context-schedule/zh.json",
+    "./workspace-context/schedule/locale/en.json": "./locale/workspace-context-schedule/en.json",
+    "./workspace-context/schedule/icon": "./icon.png",
+    "./workspace-context/session": {
+      "types": "./lib/types/workspace-context/session.d.ts",
+      "default": "./lib/workspace-context/session.js"
+    },
+    "./workspace-context/session/locale/zh.json": "./locale/workspace-context-session/zh.json",
+    "./workspace-context/session/locale/en.json": "./locale/workspace-context-session/en.json",
+    "./workspace-context/session/icon": "./icon.png",
     "./locale/zh.json": "./locale/zh.json",
     "./locale/en.json": "./locale/en.json",
     "./icon": "./icon.png",
@@ -54,9 +96,19 @@
     }
   },
   "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
     "@deepseek-ai/dsh": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.2.2-rc.1 <0.3.0",
     "@deepseek-ai/dsh-session": ">=0.2.2-rc.1 <0.3.0",
-    "react": "18.3.1"
+    "@deepseek-ai/dsh-session-persistence": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-storage-domain": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-subagent": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-util-time": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/schemastery": "~3.19.0",
+    "@js-temporal/polyfill": "0.5.1",
+    "react": "18.3.1",
+    "zod": ">=4.4.3 <5.0.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {

@@ -17,6 +17,8 @@ import { ScopedTodoReads, todoToolDefinitions, todoWriteToolDefinitions, type To
 import { ScopedMemoryReads, memoryReadToolDefinitions, memoryWriteToolDefinitions, type MemoryReadHost, type MemoryWriteHost } from '../tools/memory.js';
 import { DynamicSkillRegistry, skillReadToolDefinitions, skillWriteToolDefinitions, skillsCreatorSkill } from '../skills/dynamic-skills.js';
 import type { GoalService } from '../app/goals/service.js';
+import type { DynamicPluginBridge } from '../app/plugins/bridge.js';
+import type { PluginSpaceRegistry } from '../app/plugins/registry.js';
 import { goalReadToolDefinitions, goalWriteToolDefinitions } from '../tools/goals.js';
 import { externalConnectorToolDefinitions, type ExternalConnectorHost } from '../tools/external-connector.js';
 import { workerSandboxToolDefinitions } from '../tools/workspace-write.js';
@@ -113,6 +115,8 @@ export interface RuntimeConfig {
   };
   readonly dynamicSkills?: () => DynamicSkillRegistry | undefined;
   readonly goals?: () => GoalService | undefined;
+  readonly pluginBridge?: () => DynamicPluginBridge | undefined;
+  readonly pluginRegistry?: () => PluginSpaceRegistry | undefined;
   readonly externalConnector?: ExternalConnectorHost;
   readonly enableWorkerSandbox?: boolean;
   /** 受信 Host 的派工入口；缺失时不注册派工工具。 */
@@ -564,6 +568,7 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
         if (exec.name === TODO_WRITE_TOOLS[0] || exec.name === TODO_WRITE_TOOLS[1]) { todoWriteInput(exec); return undefined; }
         if (exec.name === SKILL_WRITE_TOOLS[0]) { skillWriteInput(exec); return undefined; }
         if (exec.name === GOAL_WRITE_TOOLS[0]) { goalWriteInput(exec); return undefined; }
+        if (config.pluginBridge?.()?.isEnabledPluginActionTool(exec.name)) { foregroundRouterInput(exec); return undefined; }
         // 派工工具在 execute 内自行核验前台 Router、授权与卡片准入。
         if (exec.name === DELEGATE_TOOL) return undefined;
         const lease = authority.capture(exec);
@@ -864,6 +869,41 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
             for (const definition of externalConnectorToolDefinitions<NativeAgent>(authority, config.externalConnector)) {
               own.push(agent.ctx.tools.register(definition));
             }
+          }
+          if (config.pluginBridge) {
+            const pluginToolDisposers = new Map<string, Dispose>();
+            const syncDynamicPluginTools = () => {
+              for (const dispose of pluginToolDisposers.values()) {
+                try { void dispose(); } catch { /* ignore */ }
+              }
+              pluginToolDisposers.clear();
+              const defs = config.pluginBridge?.()?.buildEnabledActionToolDefinitions<NativeAgent>(foregroundRouterInput) ?? [];
+              for (const def of defs) {
+                try {
+                  const dispose = agent.ctx.tools.register(def as unknown as ReturnType<typeof readToolDefinitions<NativeAgent>>[number]);
+                  pluginToolDisposers.set(def.name, dispose);
+                } catch {
+                  // ignore duplicate or unavailable tool registration
+                }
+              }
+            };
+            syncDynamicPluginTools();
+            const offMutation = config.pluginRegistry?.()?.onMutation(() => {
+              syncDynamicPluginTools();
+            });
+            if (offMutation) own.push(offMutation);
+            own.push(() => {
+              for (const dispose of pluginToolDisposers.values()) {
+                try { void dispose(); } catch { /* ignore */ }
+              }
+              pluginToolDisposers.clear();
+            });
+            own.push(agent.ctx.systemPrompt.section({
+              name: 'workspace-superagent-plugins-catalog',
+              order: 55.6,
+              interpolate: false,
+              text: () => config.pluginBridge?.()?.renderEnabledPluginsPromptSection() ?? '',
+            }));
           }
           if (config.markdownSoul) {
             own.push(agent.ctx.systemPrompt.section({

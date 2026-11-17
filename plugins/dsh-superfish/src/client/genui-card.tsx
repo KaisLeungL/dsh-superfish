@@ -460,7 +460,20 @@ export function createBuiltInGenuiMaterials(
               const isDone = live ? live.done : Boolean(item.done);
               const dateText = live?.localDate ?? item.localDate;
               const boardId = live?.boardTaskId ?? item.boardTaskId;
-              const categoryMeta = item.category ? CATEGORY_LABELS[item.category] : undefined;
+              const todayDate = localDateStr(new Date());
+              const effectiveCategory = live && dateText
+                ? (isDone && dateText === todayDate
+                    ? 'doneToday'
+                    : !isDone && dateText < todayDate
+                      ? 'overdue'
+                      : !isDone && dateText === todayDate
+                        ? 'today'
+                        : !isDone && dateText > todayDate
+                          ? 'upcoming'
+                          : item.category)
+                : item.category;
+              const categoryMeta = effectiveCategory ? CATEGORY_LABELS[effectiveCategory] : undefined;
+              const isUpcoming = !isDone && (dateText ? dateText > todayDate : effectiveCategory === 'upcoming');
               const rowKey = resolvedId ?? `suggested-${idx}`;
               const rowBusy = busyId === rowKey;
 
@@ -477,6 +490,24 @@ export function createBuiltInGenuiMaterials(
                   await syncLiveTodos();
                 } catch (err) {
                   setNotice(err instanceof Error ? err.message : '更新待办未完成');
+                } finally {
+                  setBusyId(null);
+                }
+              };
+
+              const onMoveToday = async () => {
+                if (!resolvedId || rowBusy) return;
+                setBusyId(rowKey);
+                setNotice('');
+                try {
+                  await triggerAction('dsh.personal.moveTodoToday', {
+                    todoId: resolvedId,
+                    revision: live?.revision,
+                    localDate: todayDate,
+                  });
+                  await syncLiveTodos();
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : '迁移至今日待办未完成');
                 } finally {
                   setBusyId(null);
                 }
@@ -558,7 +589,18 @@ export function createBuiltInGenuiMaterials(
                         查看卡片
                       </button>
                     )}
-                    {resolvedId && !isDone && (
+                    {resolvedId && !isDone && isUpcoming && (
+                      <button
+                        type="button"
+                        className="wsa-genui-btn"
+                        data-primary="true"
+                        disabled={rowBusy}
+                        onClick={() => void onMoveToday()}
+                      >
+                        今天完成
+                      </button>
+                    )}
+                    {resolvedId && !isDone && dateText !== tomorrowStr() && (
                       <button
                         type="button"
                         className="wsa-genui-btn"
@@ -1235,6 +1277,14 @@ export function createGuardedGenuiActions(
       const revision = await resolveTodoRevision(todoId, params.revision);
       return await mutatePersonal(sessionId, { op: 'update', id: todoId, revision, done });
     },
+    'dsh.personal.moveTodoToday': async params => {
+      const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
+      const todoId = typeof params.todoId === 'string' ? params.todoId : '';
+      const localDate = typeof params.localDate === 'string' ? params.localDate : localDateStr(new Date());
+      if (!sessionId || !todoId) throw new Error('缺少待办标识');
+      const revision = await resolveTodoRevision(todoId, params.revision);
+      return await mutatePersonal(sessionId, { op: 'move', id: todoId, revision, localDate });
+    },
     'dsh.personal.moveTodoTomorrow': async params => {
       const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
       const todoId = typeof params.todoId === 'string' ? params.todoId : '';
@@ -1263,6 +1313,14 @@ export function createGuardedGenuiActions(
       if (!sessionId || !todoId) throw new Error('缺少待办标识');
       const revision = await resolveTodoRevision(todoId, params.revision);
       return await mutatePersonal(sessionId, { op: 'update', id: todoId, revision, done });
+    },
+    'dsh.todo.moveToToday': async params => {
+      const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
+      const todoId = typeof params.todoId === 'string' ? params.todoId : '';
+      const localDate = typeof params.localDate === 'string' ? params.localDate : localDateStr(new Date());
+      if (!sessionId || !todoId) throw new Error('缺少待办标识');
+      const revision = await resolveTodoRevision(todoId, params.revision);
+      return await mutatePersonal(sessionId, { op: 'move', id: todoId, revision, localDate });
     },
     'dsh.todo.moveToTomorrow': async params => {
       const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';

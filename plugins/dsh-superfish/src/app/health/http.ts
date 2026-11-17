@@ -250,6 +250,7 @@ export function healthRoutes(current: () => HealthConnection | undefined, contro
       if (code === 'CHAT_MODEL_UNAVAILABLE') return json({ error: '这个模型或推理强度当前不可用。' }, 400);
       if (code === 'CHAT_SESSION_CHANGED' || code === 'REQUEST_ID_REUSED') return json({ error: '发送请求已变化，请重新打开主理对话。' }, 409);
       if (['REVISION_CONFLICT', 'CONTROL_BUSY'].includes(code)) return json({ error: '状态已变化或控制处理中。' }, 409);
+      if (code === 'PERSONAL_COMPLETED_READONLY') return json({ error: '已完成待办不允许编辑。' }, 400);
       if (code === 'PERSONAL_INVALID') return json({ error: '请检查待办内容和日期。' }, 400);
       if (code === 'PLUGIN_INVALID') return json({ error: '请检查插件包名与 Capability ID 格式（如 domain.action）。' }, 400);
       if (code === 'GOAL_INVALID' || code === 'GOAL_NOT_FOUND') return json({ error: '长周期目标不存在或参数无效。' }, 400);

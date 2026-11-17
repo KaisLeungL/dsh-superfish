@@ -453,6 +453,12 @@ test('前台主理可通过 steward_create_todo / steward_update_todo 直接增�
   assert.equal(unchanged.action, 'unchanged');
   assert.equal(unchanged.item.revision, 2);
 
+  // 已完成待办不允许编辑标题或日期
+  await assert.rejects(
+    updateTool.execute({ id: 'todo-existing', title: '修改已完成标题' }, callRouter(TODO_WRITE_TOOLS[1])),
+    { code: 'INVALID_ARGUMENTS' },
+  );
+
   // 非前台主理拒绝写入
   foreground = false;
   await assert.rejects(

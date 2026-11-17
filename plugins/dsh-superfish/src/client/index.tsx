@@ -12,6 +12,8 @@ import { createHealthPage } from './health.js';
 import { createSettingsSection, type ModelCatalogRemote } from './settings.js';
 import { getBotProfile } from './bot-profile.js';
 import { createSidebarBot, installSidebarBotStyles } from './sidebar-bot.js';
+import { installScheduleNavigation } from './schedule-navigation.js';
+import { installGenuiClientRegistry } from './genui-client-registry.js';
 const PANEL = 'workspace-superagent';
 const NS = 'workspace-superagent';
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -27,6 +29,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const inject = ['slots', 'layout', 'locale', 'sessions', 'modelDirectories'];
 const css = '.wsa{box-sizing:border-box;min-height:100%;padding:clamp(24px,5vw,64px);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:inherit;overflow:auto}.wsa-inner{max-width:640px;margin:0 auto}.wsa-kicker{font-size:12px;color:var(--dsw-alias-label-secondary);margin:0 0 12px}.wsa h1{font-size:24px;line-height:1.4;font-weight:600;margin:0 0 16px}.wsa p{line-height:1.8;overflow-wrap:anywhere}.wsa-intro{color:var(--dsw-alias-label-secondary)}.wsa-deps{border-top:1px solid var(--dsw-alias-border-l1);margin-top:40px;padding-top:24px}.wsa h2{font-size:14px;font-weight:600;margin:0 0 16px}.wsa dl{margin:0}.wsa-row{display:flex;gap:16px;justify-content:space-between;flex-wrap:wrap;padding:12px 0}.wsa dd{margin:0;color:var(--dsw-alias-label-secondary)}.wsa-note{font-size:12px;color:var(--dsw-alias-label-secondary);margin-top:28px}';
 export function apply(ctx: Context): void {
+  installScheduleNavigation(ctx);
+  installGenuiClientRegistry(ctx);
   ctx.effect(() => ctx.locale.register(NS, { zh: zh.ui, en: en.ui }));
   const t = ctx.locale.bind(NS);
   const Icon = createSidebarBot();

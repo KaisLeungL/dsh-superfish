@@ -2,6 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import type { RegisteredContextCapability, ContextService } from '../../tools/context.js';
 import type { SuperagentGenuiHostPlugin } from '../../genui/service.js';
+import { isExcludedCorePluginPackage, type DynamicBridgeMode, type DynamicBridgeSpec, type DynamicPluginBridge } from './bridge.js';
+
+const isDisallowedPluginSpaceKey = (pkgOrId: string): boolean => {
+  const k = pkgOrId.trim();
+  return (
+    k.startsWith('@local/dsh-tool-') ||
+    k === '@linxin666/dsh-client-ui-task-board' ||
+    k.startsWith('@linxin666/dsh-client-ui-task-board/')
+  );
+};
 
 const CAPABILITY_ID_RE = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 const PACKAGE_NAME_RE = /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(?:\/[a-z0-9-._~]+)*$/i;
@@ -21,6 +31,9 @@ export interface PersonalPluginItem {
   readonly description: string;
   readonly enabled: boolean;
   readonly source: 'builtin' | 'discovered' | 'manual';
+  readonly bridgeMode?: 'native' | 'dynamic';
+  readonly bridgeKind?: 'tool' | 'service' | 'http' | 'manifest';
+  readonly bridge?: DynamicBridgeSpec;
   readonly capabilities: readonly PersonalPluginCapability[];
   readonly updatedAt: number;
 }
@@ -33,12 +46,13 @@ export interface PersonalPluginsSnapshot {
   readonly genuiPackages: readonly string[];
 }
 
-interface StoredManualPlugin {
+export interface StoredManualPlugin {
   readonly id: string;
   readonly packageName: string;
   readonly title: string;
   readonly description: string;
   readonly capabilityId: string;
+  readonly bridge?: DynamicBridgeSpec;
   readonly enabled: boolean;
   readonly updatedAt: number;
 }
@@ -47,6 +61,58 @@ interface StoredPluginState {
   readonly version: 1;
   readonly toggles: Readonly<Record<string, { readonly enabled: boolean; readonly updatedAt: number }>>;
   readonly manual: readonly StoredManualPlugin[];
+}
+
+function sanitizeBridgeSpec(raw: unknown): DynamicBridgeSpec | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const obj = raw as Record<string, unknown>;
+  const rawMode = obj.mode;
+  const mode: DynamicBridgeMode =
+    rawMode === 'tool' || rawMode === 'service' || rawMode === 'http' ? rawMode : 'auto';
+  const toolName = typeof obj.toolName === 'string' && obj.toolName.trim() ? obj.toolName.trim().slice(0, 80) : undefined;
+  const serviceName =
+    typeof obj.serviceName === 'string' && obj.serviceName.trim() ? obj.serviceName.trim().slice(0, 80) : undefined;
+  const serviceMethod =
+    typeof obj.serviceMethod === 'string' && obj.serviceMethod.trim()
+      ? obj.serviceMethod.trim().slice(0, 80)
+      : undefined;
+  const httpPath =
+    typeof obj.httpPath === 'string' && obj.httpPath.trim().startsWith('/')
+      ? obj.httpPath.trim().slice(0, 160)
+      : undefined;
+  const actionToolName =
+    typeof obj.actionToolName === 'string' && obj.actionToolName.trim()
+      ? obj.actionToolName.trim().slice(0, 80)
+      : undefined;
+  const toolReadArgs =
+    obj.toolReadArgs && typeof obj.toolReadArgs === 'object' && !Array.isArray(obj.toolReadArgs)
+      ? (obj.toolReadArgs as Readonly<Record<string, unknown>>)
+      : undefined;
+  const serviceReadArgs =
+    obj.serviceReadArgs && typeof obj.serviceReadArgs === 'object' && !Array.isArray(obj.serviceReadArgs)
+      ? (obj.serviceReadArgs as Readonly<Record<string, unknown>>)
+      : undefined;
+  return {
+    mode,
+    ...(toolName ? { toolName } : {}),
+    ...(toolReadArgs ? { toolReadArgs } : {}),
+    ...(serviceName ? { serviceName } : {}),
+    ...(serviceMethod ? { serviceMethod } : {}),
+    ...(serviceReadArgs ? { serviceReadArgs } : {}),
+    ...(httpPath ? { httpPath } : {}),
+    ...(actionToolName ? { actionToolName } : {}),
+  };
+}
+
+function defaultCapabilityIdForPackage(packageName: string): string {
+  const short = packageName
+    .replace(/^@[^/]+\//, '')
+    .replace(/^dsh-/, '')
+    .replace(/[^a-z0-9-]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  const prefix = short && /^[a-z]/.test(short) ? short : `plugin-${short || 'custom'}`;
+  return `${prefix}.status`;
 }
 
 const KNOWN_PLUGIN_META: Readonly<
@@ -59,6 +125,28 @@ const KNOWN_PLUGIN_META: Readonly<
     }
   >
 > = {
+  '@local/dsh-superfish/workspace-context/task-board': {
+    title: 'DSH 任务看板',
+    description: '向大肥鱼暴露看板任务列表、跨项目状态统计与受控 Worker 派工能力',
+    extraCapabilities: [
+      { kind: 'genui', id: 'task-board:summary' },
+      { kind: 'action', id: 'delegate_task' },
+    ],
+  },
+  '@local/dsh-superfish/workspace-context/session': {
+    title: 'DSH 会话上下文',
+    description: '跨工作区汇总已完成会话摘要，支持主理盘点近期工作进展',
+  },
+  '@local/dsh-superfish/workspace-context/schedule': {
+    title: '定时巡检与快捷动作',
+    description: '提供早晚报定时触发器、Cron 巡检状态读取与定时任务管理',
+    extraCapabilities: [{ kind: 'action', id: 'schedule.trigger' }],
+  },
+  '@local/dsh-superfish/schedule-host': {
+    title: '定时巡检与快捷动作',
+    description: '提供早晚报定时触发器、Cron 巡检状态读取与定时任务管理',
+    extraCapabilities: [{ kind: 'action', id: 'schedule.trigger' }],
+  },
   '@local/dsh-workspace-context/task-board': {
     title: 'DSH 任务看板',
     description: '向大肥鱼暴露看板任务列表、跨项目状态统计与受控 Worker 派工能力',
@@ -91,7 +179,13 @@ const KNOWN_PLUGIN_META: Readonly<
   },
   '@local/dsh-pomodoro-clock': {
     title: '番茄钟专注计时器',
-    description: '在盘点中感知专注时段并支持渲染番茄钟状态卡片',
+    description: '感知番茄钟专注/休息倒计时状态，并支持大肥鱼直接启动、暂停、继续、重置或切换专注模式',
+    extraCapabilities: [{ kind: 'action', id: 'pomodoro' }],
+  },
+  '@local/dsh-workspace-atlas': {
+    title: 'All-In-One Workspace',
+    description: '多仓架构拓扑全景可视化、Git 分支状态、跨仓依赖与构建门禁，并支持切换/关联工作区目录',
+    extraCapabilities: [{ kind: 'action', id: 'workspace_atlas' }],
   },
 };
 
@@ -100,7 +194,9 @@ export interface PluginSpaceRegistryOptions {
   readonly baseGrants?: Readonly<Record<string, string>>;
   readonly contextService?: () => ContextService | undefined;
   readonly genuiPlugin?: () => SuperagentGenuiHostPlugin | undefined;
+  readonly dynamicBridge?: () => DynamicPluginBridge | undefined;
   readonly policyRevision?: () => string;
+  readonly onMutation?: () => void;
 }
 
 export class PluginSpaceRegistry {
@@ -108,7 +204,9 @@ export class PluginSpaceRegistry {
   private readonly baseGrants: Readonly<Record<string, string>>;
   private readonly getContextService: () => ContextService | undefined;
   private readonly getGenuiPlugin: () => SuperagentGenuiHostPlugin | undefined;
+  private readonly getDynamicBridge: () => DynamicPluginBridge | undefined;
   private readonly getPolicyRevision: () => string;
+  private readonly mutationListeners = new Set<() => void>();
   private toggles = new Map<string, { enabled: boolean; updatedAt: number }>();
   private manual = new Map<string, StoredManualPlugin>();
 
@@ -117,8 +215,41 @@ export class PluginSpaceRegistry {
     this.baseGrants = options.baseGrants ?? Object.freeze({});
     this.getContextService = options.contextService ?? (() => undefined);
     this.getGenuiPlugin = options.genuiPlugin ?? (() => undefined);
+    this.getDynamicBridge = options.dynamicBridge ?? (() => undefined);
     this.getPolicyRevision = options.policyRevision ?? (() => 'rev-default');
+    if (options.onMutation) {
+      this.mutationListeners.add(options.onMutation);
+    }
     this.loadFromDisk();
+  }
+
+  onMutation(listener: () => void): () => void {
+    this.mutationListeners.add(listener);
+    return () => {
+      this.mutationListeners.delete(listener);
+    };
+  }
+
+  private notifyMutation(): void {
+    for (const listener of this.mutationListeners) {
+      try {
+        listener();
+      } catch {
+        // ignore listener failure
+      }
+    }
+  }
+
+  manualBridgeSpecs(): ReadonlyMap<string, StoredManualPlugin> {
+    return this.manual;
+  }
+
+  isPluginEnabled(packageName: string): boolean {
+    const toggle = this.toggles.get(packageName);
+    if (toggle) return toggle.enabled;
+    const manual = this.manual.get(packageName);
+    if (manual) return manual.enabled;
+    return Object.values(this.baseGrants).includes(packageName);
   }
 
   private loadFromDisk(): void {
@@ -128,6 +259,7 @@ export class PluginSpaceRegistry {
       if (raw && typeof raw === 'object') {
         if (raw.toggles && typeof raw.toggles === 'object' && !Array.isArray(raw.toggles)) {
           for (const [key, val] of Object.entries(raw.toggles)) {
+            if (isDisallowedPluginSpaceKey(key)) continue;
             if (val && typeof val === 'object' && typeof val.enabled === 'boolean') {
               this.toggles.set(key, {
                 enabled: val.enabled,
@@ -146,7 +278,9 @@ export class PluginSpaceRegistry {
               typeof item.capabilityId === 'string' &&
               CAPABILITY_ID_RE.test(item.capabilityId)
             ) {
+              if (isDisallowedPluginSpaceKey(item.packageName)) continue;
               const id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : item.packageName;
+              const bridge = sanitizeBridgeSpec((item as { bridge?: unknown }).bridge);
               this.manual.set(id, {
                 id,
                 packageName: item.packageName,
@@ -156,6 +290,7 @@ export class PluginSpaceRegistry {
                     ? item.description.trim()
                     : '前端手动关联并接入大肥鱼空间的自定义 DSH 插件',
                 capabilityId: item.capabilityId,
+                ...(bridge ? { bridge } : {}),
                 enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
                 updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : Date.now(),
               });
@@ -198,6 +333,7 @@ export class PluginSpaceRegistry {
         // ignore missing file
       }
     }
+    this.notifyMutation();
   }
 
   private readRegisteredCapabilities(): readonly RegisteredContextCapability[] {
@@ -250,6 +386,14 @@ export class PluginSpaceRegistry {
   private buildItems(): PersonalPluginItem[] {
     const registered = this.readRegisteredCapabilities();
     const genuiIds = this.readRegisteredGenuiIds();
+    const dynamicDiscovered = (() => {
+      try {
+        return this.getDynamicBridge()?.discoverLocalPlugins() ?? [];
+      } catch {
+        return [];
+      }
+    })();
+
     const byPkg = new Map<
       string,
       {
@@ -258,6 +402,9 @@ export class PluginSpaceRegistry {
         title: string;
         description: string;
         source: 'builtin' | 'discovered' | 'manual';
+        bridgeMode?: 'native' | 'dynamic';
+        bridgeKind?: 'tool' | 'service' | 'http' | 'manifest';
+        bridge?: DynamicBridgeSpec;
         defaultEnabled: boolean;
         capabilities: PersonalPluginCapability[];
         updatedAt: number;
@@ -285,6 +432,7 @@ export class PluginSpaceRegistry {
           title: known?.title ?? pkg,
           description: known?.description ?? `内置上下文数据源（${capId}）`,
           source: 'builtin',
+          bridgeMode: 'native',
           defaultEnabled: true,
           capabilities: caps,
           updatedAt: 0,
@@ -296,6 +444,7 @@ export class PluginSpaceRegistry {
     for (const reg of registered) {
       if (!reg || typeof reg.provider !== 'string' || typeof reg.id !== 'string') continue;
       const pkg = reg.provider;
+      if (isDisallowedPluginSpaceKey(pkg)) continue;
       const known = KNOWN_PLUGIN_META[pkg];
       const existing = byPkg.get(pkg);
       if (existing) {
@@ -326,6 +475,7 @@ export class PluginSpaceRegistry {
           title: known?.title || reg.source || pkg,
           description: known?.description || reg.description || `宿主已安装插件，提供上下文能力 ${reg.id}`,
           source: inBase ? 'builtin' : 'discovered',
+          bridgeMode: 'native',
           defaultEnabled: inBase,
           capabilities: [
             {
@@ -337,6 +487,73 @@ export class PluginSpaceRegistry {
             },
             ...(known?.extraCapabilities ?? []),
           ],
+          updatedAt: 0,
+        });
+      }
+    }
+
+    // 2.5. Merge auto-discovered local third-party plugins via DynamicPluginBridge
+    for (const disc of dynamicDiscovered) {
+      const pkg = disc.packageName;
+      if (isDisallowedPluginSpaceKey(pkg) || isExcludedCorePluginPackage(pkg)) continue;
+      const known = KNOWN_PLUGIN_META[pkg];
+      const existing = byPkg.get(pkg);
+      if (existing) {
+        // Do not overwrite an existing native context capability if the plugin already registered one,
+        // but ensure action tool capabilities are attached.
+        if (!existing.capabilities.some(c => c.kind === 'context')) {
+          existing.capabilities.push({
+            kind: 'context',
+            id: disc.capabilityId,
+            description: disc.description,
+            scope: 'workspace',
+            available: disc.available,
+          });
+        }
+        for (const actionTool of disc.actionToolNames) {
+          if (!existing.capabilities.some(c => c.kind === 'action' && c.id === actionTool)) {
+            existing.capabilities.push({
+              kind: 'action',
+              id: actionTool,
+              available: disc.available,
+            });
+          }
+        }
+      } else {
+        const caps: PersonalPluginCapability[] = [
+          {
+            kind: 'context',
+            id: disc.capabilityId,
+            description: disc.description,
+            scope: 'workspace',
+            available: disc.available,
+          },
+        ];
+        for (const actionTool of disc.actionToolNames) {
+          if (!caps.some(c => c.kind === 'action' && c.id === actionTool)) {
+            caps.push({
+              kind: 'action',
+              id: actionTool,
+              available: disc.available,
+            });
+          }
+        }
+        for (const extra of known?.extraCapabilities ?? []) {
+          if (!caps.some(c => c.kind === extra.kind && c.id === extra.id)) {
+            caps.push(extra);
+          }
+        }
+        byPkg.set(pkg, {
+          id: pkg,
+          packageName: pkg,
+          title: known?.title || disc.title || pkg,
+          description: known?.description || disc.description || `自动发现本地 DSH 插件（${disc.capabilityId}）`,
+          source: 'discovered',
+          bridgeMode: disc.bridgeMode,
+          bridgeKind: disc.bridgeKind,
+          bridge: disc.bridgeSpec,
+          defaultEnabled: false,
+          capabilities: caps,
           updatedAt: 0,
         });
       }
@@ -355,23 +572,38 @@ export class PluginSpaceRegistry {
 
     // 4. Merge manually registered plugins
     for (const man of this.manual.values()) {
+      if (isDisallowedPluginSpaceKey(man.packageName)) continue;
       const existing = byPkg.get(man.packageName);
+      const actionToolId = man.bridge?.actionToolName || man.bridge?.toolName;
       if (existing) {
         if (!existing.capabilities.some(c => c.kind === 'context' && c.id === man.capabilityId)) {
           existing.capabilities.push({ kind: 'context', id: man.capabilityId });
         }
+        if (actionToolId && !existing.capabilities.some(c => c.kind === 'action' && c.id === actionToolId)) {
+          existing.capabilities.push({ kind: 'action', id: actionToolId });
+        }
         existing.title = man.title || existing.title;
         existing.description = man.description || existing.description;
+        if (man.bridge) {
+          existing.bridgeMode = 'dynamic';
+          existing.bridge = man.bridge;
+        }
         existing.updatedAt = Math.max(existing.updatedAt, man.updatedAt);
       } else {
+        const caps: PersonalPluginCapability[] = [{ kind: 'context', id: man.capabilityId }];
+        if (actionToolId) {
+          caps.push({ kind: 'action', id: actionToolId });
+        }
         byPkg.set(man.packageName, {
           id: man.id,
           packageName: man.packageName,
           title: man.title,
           description: man.description,
           source: 'manual',
+          bridgeMode: man.bridge ? 'dynamic' : 'native',
+          ...(man.bridge ? { bridge: man.bridge } : {}),
           defaultEnabled: man.enabled,
-          capabilities: [{ kind: 'context', id: man.capabilityId }],
+          capabilities: caps,
           updatedAt: man.updatedAt,
         });
       }
@@ -390,6 +622,9 @@ export class PluginSpaceRegistry {
         description: entry.description,
         enabled,
         source: entry.source,
+        ...(entry.bridgeMode ? { bridgeMode: entry.bridgeMode } : {}),
+        ...(entry.bridgeKind ? { bridgeKind: entry.bridgeKind } : {}),
+        ...(entry.bridge ? { bridge: entry.bridge } : {}),
         capabilities: entry.capabilities,
         updatedAt,
       });
@@ -413,24 +648,26 @@ export class PluginSpaceRegistry {
       this.manual.set(key, { ...manualItem, enabled, updatedAt: now });
     }
     this.saveToDisk();
+    this.notifyMutation();
     return this.snapshot();
   }
 
   registerManualPlugin(input: {
     packageName: string;
-    capabilityId: string;
+    capabilityId?: string;
     title?: string;
     description?: string;
+    bridge?: DynamicBridgeSpec;
   }): PersonalPluginsSnapshot {
     const packageName = input.packageName.trim();
-    const capabilityId = input.capabilityId.trim();
+    const rawCapId = input.capabilityId?.trim() || defaultCapabilityIdForPackage(packageName);
     if (
       !packageName ||
       packageName.length > 240 ||
       !PACKAGE_NAME_RE.test(packageName) ||
-      !capabilityId ||
-      capabilityId.length > 100 ||
-      !CAPABILITY_ID_RE.test(capabilityId)
+      !rawCapId ||
+      rawCapId.length > 100 ||
+      !CAPABILITY_ID_RE.test(rawCapId)
     ) {
       throw Error('PLUGIN_INVALID');
     }
@@ -438,18 +675,21 @@ export class PluginSpaceRegistry {
     const description = input.description?.trim()
       ? input.description.trim().slice(0, 240)
       : '前端手动关联并接入大肥鱼空间的自定义 DSH 插件';
+    const bridge = sanitizeBridgeSpec(input.bridge);
     const now = Date.now();
     this.manual.set(packageName, {
       id: packageName,
       packageName,
       title,
       description,
-      capabilityId,
+      capabilityId: rawCapId,
+      ...(bridge ? { bridge } : {}),
       enabled: true,
       updatedAt: now,
     });
     this.toggles.set(packageName, { enabled: true, updatedAt: now });
     this.saveToDisk();
+    this.notifyMutation();
     return this.snapshot();
   }
 
@@ -459,6 +699,7 @@ export class PluginSpaceRegistry {
     this.manual.delete(key);
     this.toggles.delete(key);
     this.saveToDisk();
+    this.notifyMutation();
     return this.snapshot();
   }
 

@@ -1,5 +1,19 @@
-# 安装该 bundle 时仅增加主理入口，不替换宿主插件。
+# 安装该 bundle 时集成定时任务宿主、GenUI 中间层、只读工作区上下文总线与大肥鱼主理/预设入口。
+- id: schedule
+  disabled: true
 - insert:
+    - id: quick-actions-schedule-host
+      name: '@local/dsh-superfish/schedule-host'
+    - id: superagent-genui
+      name: '@local/dsh-superfish/genui'
+    - id: workspace-context
+      name: '@local/dsh-superfish/workspace-context'
+    - id: workspace-context-task-board
+      name: '@local/dsh-superfish/workspace-context/task-board'
+    - id: workspace-context-schedule
+      name: '@local/dsh-superfish/workspace-context/schedule'
+    - id: workspace-context-session
+      name: '@local/dsh-superfish/workspace-context/session'
     - id: workspace-superagent
       name: '@local/dsh-superfish'
     - id: preset-workspace-superagent-router

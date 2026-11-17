@@ -139,9 +139,11 @@ export function repairJson(input: string): string {
  */
 export const ALLOWED_GENUI_ACTIONS = new Set([
   'dsh.todo.toggle',
+  'dsh.todo.moveToToday',
   'dsh.todo.moveToTomorrow',
   'dsh.todo.create',
   'dsh.personal.toggleTodo',
+  'dsh.personal.moveTodoToday',
   'dsh.personal.moveTodoTomorrow',
   'dsh.personal.createTodo',
   'dsh.session.open',

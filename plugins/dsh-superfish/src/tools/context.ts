@@ -1,8 +1,9 @@
 import { CallerDenied, CONTEXT_TOOLS, type CallerAgent, type CallerAuthority, type Invocation } from './authority.js';
 
 export const BOARD_CONTEXT = Object.freeze({
-  'task-board.list': '@local/dsh-workspace-context/task-board',
-  'session.list': '@local/dsh-workspace-context/session',
+  'task-board.list': '@local/dsh-superfish/workspace-context/task-board',
+  'schedule.upcoming': '@local/dsh-superfish/workspace-context/schedule',
+  'session.list': '@local/dsh-superfish/workspace-context/session',
   'personal.todos': '@local/dsh-superfish/personal-todos',
   'personal.memory': '@local/dsh-superfish/personal-memory',
 });

@@ -17,7 +17,6 @@ const board = process.env.WSA_BOARD_SPEC ?? (project + '/plugins/dsh-task-board'
 const pluginSpec = process.env.WSA_PLUGIN_SPEC ?? plugin;
 const contextLab = process.env.WSA_CONTEXT_LAB === '1';
 const allBoardProjects = contextLab && process.env.WSA_CONTEXT_ALL_BOARD === '1';
-const contextBundle = project + '/plugins/dsh-workspace-context';
 const profile = ['--profile','superagent-actions-lab'];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   !/^DSH_|TOKEN|SECRET|PASSWORD|CREDENTIAL|API_?KEY|^(DEEPSEEK|OPENAI|ANTHROPIC|AWS|AZURE|GOOGLE)_/i.test(key)));
@@ -53,7 +52,7 @@ if (!supplied) {
   await mkdir(root+'/workspace');
   await mkdir(root+'/private',{ mode:0o700 });
   cmd([...profile,'--from-default-profile','web','--help']);
-  cmd(['plugin',...profile,'add',project+'/plugins/dsh-input-admission-cap4',pluginSpec,board,...(contextLab ? [contextBundle] : []),'--ignore-scripts','--offline']);
+  cmd(['plugin',...profile,'add',project+'/plugins/dsh-input-admission-cap4',pluginSpec,board,'--ignore-scripts','--offline']);
   const provider='superagent-actions-fixture';
   const schedule='dsh.schedule.create', task='dsh.taskBoard.create';
   const cases=[
@@ -144,7 +143,6 @@ export async function apply(ctx){
   const deployment={databasePath:root+'/private/manager.sqlite',workspacePath:root+'/workspace',
     identity:{instanceId:randomUUID(),domainId:randomUUID()},model:{provider,model:'controlled'},
     firstInstall:{expiresAt:Date.now()+86400000,proofRef:'isolated-actions-lab'},
-    ...(contextLab && {contextSources:{'schedule.upcoming':'@local/dsh-workspace-context/schedule'}}),
     ...(contextLab && {boardReadScope:allBoardProjects?'all-projects':'workspace'})};
   const add='- id: workspace-superagent\n  config: '+JSON.stringify({deployment})+'\n';
   if (contextLab) {

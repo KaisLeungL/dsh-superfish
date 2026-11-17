@@ -7,6 +7,7 @@ import { getBotProfile } from './bot-profile.js';
 import { readChatHealth } from './chat-transport.js';
 import { CONTROL_TOKEN_HEADER } from '../status.js';
 import { templates, week } from './action-templates.js';
+import { openScheduleTask } from './schedule-navigation.js';
 
 const css = `
 .wsa-action{margin:12px 0 7px;max-width:690px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:13px;overflow-wrap:anywhere}
@@ -171,8 +172,7 @@ export function createActionCard(
       const board = ctx.get('taskBoard') as { openTaskFromHost?(id: string): Promise<boolean> } | undefined;
       if (!await board?.openTaskFromHost?.(id)) throw Error('当前看板无法打开这张卡片，请到任务看板核对');
     } else {
-      const nav = ctx.get('scheduleNavigation') as { openTask(id: string): boolean } | undefined;
-      if (!nav?.openTask(id)) throw Error('当前定时任务详情不可用，请到定时任务管理页核对');
+      if (!openScheduleTask(ctx, id)) throw Error('当前定时任务详情不可用，请到定时任务管理页核对');
     }
   }
   function ProposalCard({ card, turn, sessionId, total, batchBusy, onChange }: {

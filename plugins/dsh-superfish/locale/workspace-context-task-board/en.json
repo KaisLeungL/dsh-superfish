@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Superfish · Task Board Context Adapter",
+    "description": "Provides read-only task board card summaries and cross-project status queries to Superfish."
+  }
+}

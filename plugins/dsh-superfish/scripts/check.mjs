@@ -8,7 +8,7 @@ import vm from 'node:vm';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),read=p=>readFileSync(root+'/'+p,'utf8'),pkg=JSON.parse(read('package.json'));
 const checks=[];function check(name,ok){assert.ok(ok,name);checks.push({name,passed:true});}
 check('精确版本',Object.values(pkg.devDependencies).every(v=>/^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(v)));
-for(const p of ['lib/index.js','lib/preset.js','lib/client.js','lib/types/index.d.ts','lib/types/sessions/preset.d.ts','lib/types/client/index.d.ts','cordis.patch.yml','locale/zh.json','locale/en.json','icon.png','icon.svg','skills/dsh-genui/SKILL.md','skills/dsh-quick-actions/SKILL.md','skills/skills-creator/SKILL.md',pkg.icon])check('产物存在 '+p,existsSync(root+'/'+p));
+for(const p of ['lib/index.js','lib/preset.js','lib/client.js','lib/genui/index.js','lib/schedule-host/index.js','lib/workspace-context/index.js','lib/workspace-context/task-board.js','lib/workspace-context/schedule.js','lib/workspace-context/session.js','lib/types/index.d.ts','lib/types/sessions/preset.d.ts','lib/types/client/index.d.ts','lib/types/genui/index.d.ts','lib/types/schedule-host/index.d.ts','lib/types/workspace-context/index.d.ts','lib/types/workspace-context/task-board.d.ts','lib/types/workspace-context/schedule.d.ts','lib/types/workspace-context/session.d.ts','cordis.patch.yml','locale/zh.json','locale/en.json','icon.png','icon.svg','skills/dsh-genui/SKILL.md','skills/dsh-quick-actions/SKILL.md','skills/skills-creator/SKILL.md',pkg.icon])check('产物存在 '+p,existsSync(root+'/'+p));
 const zh=JSON.parse(read('locale/zh.json')),en=JSON.parse(read('locale/en.json'));
 check('双语元数据',!!zh.meta.title&&!!zh.meta.description&&!!en.meta.title&&!!en.meta.description);
 check('双语键一致',JSON.stringify(Object.keys(zh.ui).sort())===JSON.stringify(Object.keys(en.ui).sort()));
@@ -19,5 +19,6 @@ const requires=[];const exports=moduleRecord.factory(name=>{requires.push(name);
 check('只引用宿主 React',requires.length===1&&requires[0]==='react'&&typeof exports.apply==='function');
 check('无 Chat 复制或业务操作',!client.includes('sessionController')&&!client.includes('createSession')&&!client.includes('runTask'));
 check('类型声明无失效 JSON 路径',!read('lib/types/client/index.d.ts').includes('../../locale'));
+const patchText=read('cordis.patch.yml');check('cordis.patch.yml 为顶层数组且含 insert 与预设',/^\s*-\s+/m.test(patchText)&&!/^plugins:/m.test(patchText)&&patchText.includes('- insert:')&&patchText.includes('preset-workspace-superagent-router'));
 const hashes=Object.fromEntries(['package.json','cordis.patch.yml','lib/index.js','lib/preset.js','lib/client.js','locale/zh.json','locale/en.json','icon.png','icon.svg','skills/dsh-genui/SKILL.md','skills/dsh-quick-actions/SKILL.md','skills/skills-creator/SKILL.md','sdk-lock.json'].map(p=>[p,createHash('sha256').update(readFileSync(root+'/'+p)).digest('hex')]));
 const dir=resolve(root,'../../.superagent-product-lab/b04-deployment/check-'+randomUUID());mkdirSync(dir,{recursive:true});writeFileSync(dir+'/manifest-check.json',JSON.stringify({version:pkg.version,checks,hashes},null,2)+'\n');console.log(JSON.stringify({checks:checks.length,passed:true,hashes}));

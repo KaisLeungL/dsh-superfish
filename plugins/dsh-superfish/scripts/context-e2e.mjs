@@ -58,7 +58,7 @@ async function run(root, disabledSource, allBoardProjects = false) {
       health = await waitFor(async () => { const value = await call('health'); return value.chat?.ready && value; }, '主理会话连接');
     }
     assert.deepEqual(Object.fromEntries(health.contextSources.map(({ id, available }) => [id, available])), {
-      'task-board.list': !disableBoard, 'session.list': true, 'personal.todos': true, 'schedule.upcoming': !disableSchedule,
+      'task-board.list': !disableBoard, 'session.list': true, 'personal.todos': true, 'personal.memory': true, 'schedule.upcoming': !disableSchedule,
     });
     const resultsFile = root + '/context-results.jsonl';
     const readResults = async () => (await readFile(resultsFile, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean);

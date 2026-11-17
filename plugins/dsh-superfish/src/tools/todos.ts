@@ -793,6 +793,9 @@ export function todoWriteToolDefinitions<A extends CallerAgent>(
         if (!existing) {
           throw new CallerDenied('NOT_FOUND', '未找到对应的个人待办，请先调用 steward_list_todos 确认 ID。');
         }
+        if (existing.done && ((nextTitle !== undefined && nextTitle !== existing.title) || (nextDate !== undefined && nextDate !== existing.localDate))) {
+          throw new CallerDenied('INVALID_ARGUMENTS', '已完成待办不允许编辑标题或计划日期。');
+        }
         const changed = (nextTitle !== undefined && nextTitle !== existing.title)
           || (nextDate !== undefined && nextDate !== existing.localDate)
           || (input.done !== undefined && input.done !== existing.done);

@@ -13,6 +13,7 @@ import {
 } from '../app/health/chat-input.js';
 import { CONTROL_TOKEN_HEADER } from '../status.js';
 import { BotAvatar, getBotProfile, useBotProfile } from './bot-profile.js';
+import { openScheduleTask } from './schedule-navigation.js';
 import { readChatHealth } from './chat-transport.js';
 import { Icon, type IconName } from './icons.js';
 import type { ModelCatalogGroup } from './settings.js';
@@ -33,6 +34,7 @@ export interface PersonalTodo {
   revision: number;
   boardTaskId?: string;
   sourceUnavailable?: boolean;
+  archived?: boolean;
 }
 export interface PersonalSchedule {
   id: string;
@@ -105,6 +107,15 @@ export interface PersonalPluginItem {
   description: string;
   enabled: boolean;
   source: 'builtin' | 'discovered' | 'manual';
+  bridgeMode?: 'native' | 'dynamic';
+  bridgeKind?: 'tool' | 'service' | 'http' | 'manifest';
+  bridge?: {
+    mode?: 'auto' | 'tool' | 'service' | 'http';
+    toolName?: string;
+    serviceName?: string;
+    httpPath?: string;
+    actionToolName?: string;
+  };
   capabilities: readonly PersonalPluginCapability[];
   updatedAt: number;
 }
@@ -181,7 +192,7 @@ export interface PersonalPanelProps {
   config?: StewardConfigPanelProps;
 }
 type Page = 'overview' | 'todos' | 'activities';
-type TodoFilter = 'all' | 'pending' | 'done';
+type TodoFilter = 'all' | 'pending' | 'done' | 'archived';
 type ActivityFilter = 'all' | 'waiting' | 'finished';
 type Tone = 'neutral' | 'waiting' | 'success' | 'error';
 
@@ -608,13 +619,12 @@ const css = `
 .wsa-plugin-icon-btn:active:enabled{transform:scale(.94)}
 .wsa-plugin-icon-btn[data-primary="true"]{background:var(--wsa-brand);border-color:transparent;color:#fff}
 .wsa-plugin-icon-btn[data-primary="true"]:hover:enabled{opacity:.9;background:var(--wsa-brand);color:#fff}
-.wsa-plugin-title-stack{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;flex:1}
-.wsa-plugin-pkg{display:inline-block;max-width:100%;padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 6%,transparent);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:10px;line-height:1.45;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wsa-plugin-caps{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding-top:6px;border-top:1px solid color-mix(in srgb,var(--dsw-alias-label-primary) 7%,transparent)}
-.wsa-plugin-cap{display:inline-flex;align-items:center;gap:3.5px;height:19px;padding:0 7px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:color-mix(in srgb,var(--dsw-alias-label-primary) 3.5%,var(--dsw-alias-bg-base));font-size:10px;font-weight:600;color:var(--dsw-alias-label-secondary);white-space:nowrap}
-.wsa-plugin-cap[data-kind="context"]{color:var(--wsa-brand);border-color:color-mix(in srgb,var(--wsa-brand) 32%,var(--dsw-alias-border-l1));background:color-mix(in srgb,var(--wsa-brand) 8%,var(--dsw-alias-bg-base))}
-.wsa-plugin-cap[data-kind="genui"]{color:#a855f7;border-color:rgb(168 85 247 / .3);background:rgb(168 85 247 / .08)}
-.wsa-plugin-cap[data-kind="action"]{color:var(--dsw-alias-state-warn-primary,#f59e0b);border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#f59e0b) 32%,var(--dsw-alias-border-l1));background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#f59e0b) 8%,var(--dsw-alias-bg-base))}
+.wsa-plugin-list{display:flex;flex-direction:column;gap:6px}
+.wsa-plugin-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);transition:border-color var(--wsa-quick) var(--wsa-ease),background-color var(--wsa-quick) var(--wsa-ease)}
+.wsa-plugin-row:hover{border-color:color-mix(in srgb,var(--wsa-brand) 42%,var(--dsw-alias-border-l1))}
+.wsa-plugin-title-stack{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;flex:1}
+.wsa-plugin-name{font-size:12.5px;font-weight:600;line-height:1.35;color:var(--dsw-alias-label-primary);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wsa-plugin-pkg{display:inline-block;max-width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:10.5px;line-height:1.35;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wsa-plugin-subnav{display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent)}
 .wsa-plugin-subnav .wsa-cfg-card-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -874,6 +884,8 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
     const [newPluginPkg, setNewPluginPkg] = React.useState('');
     const [newPluginCap, setNewPluginCap] = React.useState('');
     const [newPluginTitle, setNewPluginTitle] = React.useState('');
+    const [newPluginBridgeMode, setNewPluginBridgeMode] = React.useState<'auto' | 'tool' | 'service' | 'http'>('auto');
+    const [newPluginBridgeTarget, setNewPluginBridgeTarget] = React.useState('');
     const [memScopeFilter, setMemScopeFilter] = React.useState<'all' | 'pinned' | 'global' | 'workspace'>('all');
     const [memCatFilter, setMemCatFilter] = React.useState<'all' | PersonalMemoryItem['category']>('all');
     const [memQuery, setMemQuery] = React.useState('');
@@ -1107,8 +1119,7 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
       } finally { busyRef.current = false; if (mounted.current) setBusy(false); }
     };
     const openSchedule = (id: string) => {
-      const navigation = ctx.get('scheduleNavigation') as { openTask(id: string): boolean } | undefined;
-      if (!navigation?.openTask(id)) setNotice('定时任务详情暂不可用，请在自动化任务中查看。');
+      if (!openScheduleTask(ctx, id)) setNotice('定时任务详情暂不可用，请在自动化任务中查看。');
     };
     const openBoard = async (id: string, goalMeta?: { goalId?: string; milestoneId?: string; title?: string }) => {
       const board = ctx.get('taskBoard') as { openTaskFromHost?(id: string): Promise<boolean> } | undefined;
@@ -1167,7 +1178,10 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
     const closeActivity = () => { setActivity(undefined); trigger.current?.focus(); };
     const today = localDate(new Date());
     const todos = snapshot?.todos.items ?? [];
-    const todayItems = todos.filter(item => item.localDate === today).sort((a, b) => Number(a.done) - Number(b.done));
+    const activeTodos = todos.filter(item => !item.archived);
+    const archivedTodos = todos.filter(item => item.archived);
+    const todayItems = activeTodos.filter(item => item.localDate === today).sort((a, b) => Number(a.done) - Number(b.done));
+    const upcomingItems = activeTodos.filter(item => !item.done && item.localDate > today);
     const doneToday = todayItems.filter(item => item.done).length;
     const activities = snapshot?.activities.items ?? [];
     const scheduleItems = [...(snapshot?.schedules.items ?? [])].sort((a, b) => {
@@ -1195,16 +1209,22 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
         <div className="wsa-personal-form-actions"><button type="button" onClick={() => setAddingBoard(false)}>取消</button><button disabled={!boardId || busy}>添加</button></div>
       </form>}
     </>;
-    const todoRow = (item: PersonalTodo, secondary = false) => <div className={'wsa-personal-row' + (item.done ? ' wsa-personal-row-done' : '')} key={item.id}>
-      {editing === item.id ? <form className="wsa-personal-form wsa-personal-form-inline" onSubmit={event => { event.preventDefault(); if (editTitle.trim()) void mutate({ op: 'update', id: item.id, revision: item.revision, title: editTitle.trim() }).then(ok => { if (ok) setEditing(undefined); }); }}>
-        <input autoFocus aria-label="编辑待办标题" maxLength={120} value={editTitle} onChange={event => setEditTitle(event.target.value)} /><button disabled={busy || !editTitle.trim()}>保存</button><button type="button" onClick={() => setEditing(undefined)}>取消</button>
-      </form> : <>
-        <label className="wsa-personal-check"><input type="checkbox" checked={item.done} disabled={busy} onChange={event => void mutate({ op: 'update', id: item.id, revision: item.revision, done: event.target.checked })} /><span className="wsa-personal-box" aria-hidden="true"><Icon name="check" size={9} strokeWidth={3} /></span><span className="wsa-personal-row-text"><span className={'wsa-personal-title' + (item.done ? ' wsa-personal-complete' : '')}>{item.title}</span>{secondary && todoMeta(item, today) && <span className="wsa-personal-sub">{todoMeta(item, today)}</span>}</span></label>
-        <div className="wsa-personal-row-actions">{item.boardTaskId && <button type="button" aria-label={'打开看板任务：' + item.title} title="打开看板任务" onClick={() => void openBoard(item.boardTaskId!, { title: item.title })}><Icon name="link" size={13} /></button>}
-          {secondary && !item.sourceUnavailable && <button type="button" aria-label={'编辑：' + item.title} title="编辑" onClick={() => { setEditing(item.id); setEditTitle(item.title); }}><Icon name="edit" size={13} /></button>}
-          {secondary && !item.done && <button type="button" disabled={busy} aria-label={'移到明天：' + item.title} title="移到明天" onClick={() => void mutate({ op: 'move', id: item.id, revision: item.revision, localDate: tomorrow() })}><Icon name="calendar" size={13} /></button>}
-        </div></>}
-    </div>;
+    const todoRow = (item: PersonalTodo, secondary = false) => {
+      const isUpcoming = !item.done && item.localDate > today;
+      return <div className={'wsa-personal-row' + (item.done ? ' wsa-personal-row-done' : '')} key={item.id}>
+        {!item.done && editing === item.id ? <form className="wsa-personal-form wsa-personal-form-inline" onSubmit={event => { event.preventDefault(); if (editTitle.trim()) void mutate({ op: 'update', id: item.id, revision: item.revision, title: editTitle.trim() }).then(ok => { if (ok) setEditing(undefined); }); }}>
+          <input autoFocus aria-label="编辑待办标题" maxLength={120} value={editTitle} onChange={event => setEditTitle(event.target.value)} /><button disabled={busy || !editTitle.trim()}>保存</button><button type="button" onClick={() => setEditing(undefined)}>取消</button>
+        </form> : <>
+          <label className="wsa-personal-check"><input type="checkbox" checked={item.done} disabled={busy || Boolean(item.archived)} onChange={event => { if (editing === item.id) setEditing(undefined); void mutate({ op: 'update', id: item.id, revision: item.revision, done: event.target.checked }); }} /><span className="wsa-personal-box" aria-hidden="true"><Icon name="check" size={9} strokeWidth={3} /></span><span className="wsa-personal-row-text"><span className={'wsa-personal-title' + (item.done ? ' wsa-personal-complete' : '')}>{item.title}</span>{secondary && todoMeta(item, today) && <span className="wsa-personal-sub">{todoMeta(item, today)}</span>}</span></label>
+          <div className="wsa-personal-row-actions">{item.boardTaskId && <button type="button" aria-label={'打开看板任务：' + item.title} title="打开看板任务" onClick={() => void openBoard(item.boardTaskId!, { title: item.title })}><Icon name="link" size={13} /></button>}
+            {secondary && !item.done && !item.sourceUnavailable && <button type="button" aria-label={'编辑：' + item.title} title="编辑" onClick={() => { setEditing(item.id); setEditTitle(item.title); }}><Icon name="edit" size={13} /></button>}
+            {isUpcoming && <button type="button" disabled={busy} aria-label={'今天完成：' + item.title} title="今天完成" onClick={() => void mutate({ op: 'move', id: item.id, revision: item.revision, localDate: today })}><Icon name="calendar-check" size={13} /></button>}
+            {!item.done && item.localDate !== tomorrow() && <button type="button" disabled={busy} aria-label={'移到明天：' + item.title} title="移到明天" onClick={() => void mutate({ op: 'move', id: item.id, revision: item.revision, localDate: tomorrow() })}><Icon name="calendar" size={13} /></button>}
+            {item.done && !item.archived && <button type="button" disabled={busy} aria-label={'归档：' + item.title} title="归档" onClick={() => void mutate({ op: 'archive', id: item.id, revision: item.revision })}><Icon name="archive" size={13} /></button>}
+          </div>
+        </>}
+      </div>;
+    };
     const activityRow = (item: PersonalActivity) => <button type="button" className="wsa-personal-row wsa-personal-entry" key={item.id} onClick={event => showActivity(item, event.currentTarget)}>
       <span className="wsa-personal-entry-icon" aria-hidden="true"><Icon name={item.kind === 'schedule_trigger' ? 'clock' : 'route'} size={15} /></span>
       <span className="wsa-personal-row-text"><span className="wsa-personal-entry-head"><span className="wsa-personal-title">{item.title}</span><time>{time(item.updatedAt)}</time></span><span className="wsa-personal-sub wsa-personal-activity-meta">{item.worker && <span className="wsa-personal-worker">{item.worker}</span>}<span className="wsa-personal-status" data-tone={statusTone(item.status)}>{activityStatus(item.status)}</span></span></span>
@@ -1227,11 +1247,14 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
       ? <p className="wsa-personal-note" role="status">{resource?.error ?? '暂时无法读取'}<button type="button" onClick={() => void load()}>重试</button></p>
       : resource.items.length === 0 && empty ? <p className="wsa-personal-empty">{empty}</p> : null;
 
-    const visibleTodos = todos.filter(item => todoFilter === 'all' || (todoFilter === 'done' ? item.done : !item.done));
+    const visibleTodos = todoFilter === 'archived'
+      ? archivedTodos
+      : activeTodos.filter(item => todoFilter === 'all' || (todoFilter === 'done' ? item.done : !item.done));
     const overdue = visibleTodos.filter(item => !item.done && item.localDate < today);
     const current = visibleTodos.filter(item => !item.done && item.localDate === today);
     const future = visibleTodos.filter(item => !item.done && item.localDate > today);
-    const completed = visibleTodos.filter(item => item.done);
+    const completed = visibleTodos.filter(item => item.done && !item.archived);
+    const archived = visibleTodos.filter(item => item.archived);
     const shownActivities = activities.filter(item => activityFilter === 'all' || (activityFilter === 'waiting' ? waiting(item) : finished(item)));
     const automationRunning = automationText.includes('运行中');
 
@@ -2189,7 +2212,11 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
           )}
 
           {configSubTab === 'plugins' && (() => {
-            const pluginItems = snapshot?.plugins?.items ?? [];
+            const pluginItems = (snapshot?.plugins?.items ?? []).filter(
+              p =>
+                p.packageName !== '@linxin666/dsh-client-ui-task-board' &&
+                !p.packageName.startsWith('@linxin666/dsh-client-ui-task-board/'),
+            );
             const boundPluginCount = pluginItems.filter(p => p.enabled).length;
             const discoveredPluginCount = pluginItems.length - boundPluginCount;
             const filteredPlugins = pluginItems.filter(p => {
@@ -2207,18 +2234,37 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
               const packageName = newPluginPkg.trim();
               const capabilityId = newPluginCap.trim();
               const pluginTitle = newPluginTitle.trim();
-              if (!packageName || !capabilityId || busy) return;
+              const bridgeTarget = newPluginBridgeTarget.trim();
+              if (!packageName || busy) return;
+              const bridge = {
+                mode: newPluginBridgeMode,
+                ...(newPluginBridgeMode === 'tool' && bridgeTarget
+                  ? { toolName: bridgeTarget, actionToolName: bridgeTarget }
+                  : {}),
+                ...(newPluginBridgeMode === 'service' && bridgeTarget
+                  ? { serviceName: bridgeTarget }
+                  : {}),
+                ...(newPluginBridgeMode === 'http' && bridgeTarget
+                  ? { httpPath: bridgeTarget }
+                  : {}),
+                ...(newPluginBridgeMode === 'auto' && bridgeTarget
+                  ? { toolName: bridgeTarget, actionToolName: bridgeTarget }
+                  : {}),
+              };
               const ok = await mutate({
                 op: 'plugin.register',
                 packageName,
-                capabilityId,
+                ...(capabilityId ? { capabilityId } : {}),
                 ...(pluginTitle ? { title: pluginTitle } : {}),
+                bridge,
               });
               if (ok) {
                 const label = pluginTitle || packageName;
                 setNewPluginPkg('');
                 setNewPluginCap('');
                 setNewPluginTitle('');
+                setNewPluginBridgeMode('auto');
+                setNewPluginBridgeTarget('');
                 setPluginFilter('all');
                 setPluginSubView('list');
                 setPluginToast(`✓ 已关联 ${label}`);
@@ -2304,60 +2350,39 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
                             : '暂未发现可用插件，可点击右上角「+」图标添加 DSH 插件包名。'}
                         </p>
                       ) : (
-                        <div className="wsa-sm-list">
+                        <div className="wsa-plugin-list">
                           {filteredPlugins.map(plugin => (
-                            <article key={plugin.id} className="wsa-sm-item">
-                              <div className="wsa-sm-item-head">
-                                <div className="wsa-plugin-title-stack">
-                                  <div className="wsa-sm-item-badges">
-                                    <span className="wsa-sm-item-title">{plugin.title}</span>
-                                    {!plugin.enabled && (
-                                      <span className="wsa-sm-cat">待启用</span>
-                                    )}
-                                    {plugin.source === 'manual' && (
-                                      <span className="wsa-sm-scope" data-global="true">手动关联</span>
-                                    )}
-                                  </div>
-                                  <span className="wsa-plugin-pkg" title={plugin.packageName}>{plugin.packageName}</span>
-                                </div>
-                                <div className="wsa-cfg-footer-actions">
-                                  {plugin.source === 'manual' && (
-                                    <button
-                                      type="button"
-                                      className="wsa-sm-del-btn"
-                                      disabled={busy}
-                                      title="移除该手动关联插件"
-                                      aria-label={`移除插件：${plugin.title}`}
-                                      onClick={() => void mutate({ op: 'plugin.remove', id: plugin.id })}
-                                    >
-                                      <Icon name="close" size={12} />
-                                    </button>
-                                  )}
+                            <article key={plugin.id} className="wsa-plugin-row">
+                              <div className="wsa-plugin-title-stack">
+                                <span className="wsa-plugin-name" title={plugin.title}>{plugin.title}</span>
+                                <span className="wsa-plugin-pkg" title={plugin.packageName}>{plugin.packageName}</span>
+                              </div>
+                              <div className="wsa-cfg-footer-actions">
+                                {plugin.source === 'manual' && (
                                   <button
                                     type="button"
-                                    role="switch"
-                                    className="wsa-cfg-switch"
+                                    className="wsa-sm-del-btn"
                                     disabled={busy}
-                                    aria-label={`${plugin.enabled ? '停用' : '启用'}插件 ${plugin.title}`}
-                                    aria-checked={plugin.enabled}
-                                    title={plugin.enabled ? `点击从${displayBotName}空间移出` : `点击启用并注册到${displayBotName}空间`}
-                                    onClick={() => void mutate({ op: 'plugin.toggle', id: plugin.id, enabled: !plugin.enabled })}
+                                    title="移除该手动关联插件"
+                                    aria-label={`移除插件：${plugin.title}`}
+                                    onClick={() => void mutate({ op: 'plugin.remove', id: plugin.id })}
                                   >
-                                    <span className="wsa-cfg-switch-thumb" />
+                                    <Icon name="close" size={12} />
                                   </button>
-                                </div>
+                                )}
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  className="wsa-cfg-switch"
+                                  disabled={busy}
+                                  aria-label={`${plugin.enabled ? '停用' : '启用'}插件 ${plugin.title}`}
+                                  aria-checked={plugin.enabled}
+                                  title={plugin.enabled ? `点击从${displayBotName}空间移出` : `点击启用并注入到${displayBotName}空间`}
+                                  onClick={() => void mutate({ op: 'plugin.toggle', id: plugin.id, enabled: !plugin.enabled })}
+                                >
+                                  <span className="wsa-cfg-switch-thumb" />
+                                </button>
                               </div>
-                              <p className="wsa-sm-item-body">{plugin.description}</p>
-                              {plugin.capabilities.length > 0 && (
-                                <div className="wsa-plugin-caps">
-                                  {plugin.capabilities.map(cap => (
-                                    <span key={`${cap.kind}:${cap.id}`} className="wsa-plugin-cap" data-kind={cap.kind}>
-                                      <span>{cap.kind === 'context' ? 'Context:' : cap.kind === 'genui' ? 'GenUI:' : 'Action:'}</span>
-                                      <span>{cap.id}</span>
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
                             </article>
                           ))}
                         </div>
@@ -2382,10 +2407,10 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
                     </div>
                     <form className="wsa-cfg-body" onSubmit={event => void submitRegisterPlugin(event)}>
                       <p className="wsa-cfg-card-desc">
-                        输入第三方 DSH 插件的 Cordis 模块包名与暴露的 Context Capability ID，即可将其直接关联并授权到{displayBotName}空间：
+                        输入第三方 DSH 插件包名即可关联并动态注入到{displayBotName}空间：
                       </p>
                       <label className="wsa-cfg-field">
-                        <span className="wsa-cfg-label">1. DSH 插件包名 (Module Name) *</span>
+                        <span className="wsa-cfg-label">1. DSH 插件包名 (Package Name) *</span>
                         <input
                           type="text"
                           className="wsa-cfg-input"
@@ -2397,19 +2422,7 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
                         />
                       </label>
                       <label className="wsa-cfg-field">
-                        <span className="wsa-cfg-label">2. Context Capability ID *</span>
-                        <input
-                          type="text"
-                          className="wsa-cfg-input"
-                          aria-label="Context Capability ID"
-                          maxLength={100}
-                          value={newPluginCap}
-                          placeholder="例如 git-radar.branches"
-                          onChange={e => setNewPluginCap(e.target.value)}
-                        />
-                      </label>
-                      <label className="wsa-cfg-field">
-                        <span className="wsa-cfg-label">3. 插件显示名称（选填）</span>
+                        <span className="wsa-cfg-label">2. 插件显示名称（选填）</span>
                         <input
                           type="text"
                           className="wsa-cfg-input"
@@ -2432,7 +2445,7 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
                           type="submit"
                           className="wsa-cfg-foot-btn"
                           data-primary="true"
-                          disabled={busy || !newPluginPkg.trim() || !newPluginCap.trim()}
+                          disabled={busy || !newPluginPkg.trim()}
                         >
                           关联并启用
                         </button>
@@ -2573,6 +2586,12 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
                 {!snapshot.todos.available ? error(snapshot.todos, '') : todayItems.length > 0
                   ? <div className="wsa-personal-list">{todayItems.slice(0, 5).map(item => todoRow(item))}</div>
                   : !adding && <p className="wsa-personal-empty">今天还没有待办。</p>}
+                {snapshot.todos.available && upcomingItems.length > 0 && (
+                  <div className="wsa-personal-upcoming" aria-label="即将待办">
+                    <p className="wsa-personal-date">即将待办 · {upcomingItems.length} 项</p>
+                    <div className="wsa-personal-list">{upcomingItems.slice(0, 3).map(item => todoRow(item, true))}</div>
+                  </div>
+                )}
                 <div className="wsa-personal-today-meta">
                   {snapshot.todos.available && todayItems.length > 0 && <span className="wsa-personal-progress">
                     <progress value={doneToday} max={todayItems.length} aria-label="今日待办完成进度" />
@@ -2720,9 +2739,9 @@ export function createPersonalPanel(ctx: Context): React.ComponentType<PersonalP
           </footer>
         </> : page === 'todos' ? <>
           <header className="wsa-personal-subhead"><button type="button" className="wsa-personal-icon" aria-label="返回个人面板" onClick={() => setPage('overview')}><Icon name="back" size={15} /></button><h2>全部待办</h2><span className="wsa-personal-spacer" /><button type="button" className="wsa-personal-icon" aria-label="从看板添加" title="从看板添加" onClick={() => { setAddingBoard(true); setAdding(false); }}><Icon name="board" size={15} /></button><button type="button" className="wsa-personal-icon" aria-label="新增待办" title="新增待办" onClick={() => { setAdding(true); setAddingBoard(false); }}><Icon name="plus" size={15} /></button></header>
-          <div className="wsa-personal-body">{form}{filter([['all', '全部'], ['pending', '未完成'], ['done', '已完成']] as const, todoFilter, value => setTodoFilter(value as TodoFilter), '筛选待办')}
-            {error(snapshot.todos, '还没有待办。')}{snapshot.todos.available && visibleTodos.length === 0 && todos.length > 0 && <p className="wsa-personal-note">没有符合条件的待办。</p>}
-            {([['已逾期', overdue], ['今天', current], ['即将到来', future], ['已完成', completed]] as [string, PersonalTodo[]][]).map(([heading, rows]) => rows.length > 0 && <section className="wsa-personal-group" key={heading}><h3 data-tone={heading === '已逾期' ? 'warn' : undefined}>{heading}<span>{rows.length} 项</span></h3>{rows.map(item => todoRow(item, true))}</section>)}
+          <div className="wsa-personal-body">{form}{filter([['all', '全部'], ['pending', '未完成'], ['done', '已完成'], ['archived', '已归档']] as const, todoFilter, value => setTodoFilter(value as TodoFilter), '筛选待办')}
+            {error(snapshot.todos, '还没有待办。')}{snapshot.todos.available && visibleTodos.length === 0 && todos.length > 0 && <p className="wsa-personal-note">{todoFilter === 'archived' ? '暂无已归档待办。' : '没有符合条件的待办。'}</p>}
+            {([['已逾期', overdue], ['今天', current], ['即将到来', future], ['已完成', completed], ['已归档', archived]] as [string, PersonalTodo[]][]).map(([heading, rows]) => rows.length > 0 && <section className="wsa-personal-group" key={heading}><h3 data-tone={heading === '已逾期' ? 'warn' : undefined}>{heading}<span>{rows.length} 项</span></h3>{rows.map(item => todoRow(item, true))}</section>)}
           </div>
         </> : <>
           <header className="wsa-personal-subhead"><button type="button" className="wsa-personal-icon" aria-label="返回个人面板" onClick={() => setPage('overview')}><Icon name="back" size={15} /></button><h2>委派活动</h2></header>

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Superfish · Session Context Adapter",
+    "description": "Provides cross-workspace read-only session summaries and progress queries to Superfish."
+  }
+}
