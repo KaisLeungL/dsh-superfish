@@ -202,8 +202,8 @@ function FoldSection({ title, summary, hint, expanded, children }: {
   )
 }
 
-/** The execution-target editor: workspace / mode / permission pickers. */
-function ExecutionSettingsSection({ controller, task, pending, executionOptions, goalRunEnabled, attachWorkspace }: {
+/** The execution-target editor: mode / permission / model pickers. */
+function ExecutionSettingsSection({ controller, task, pending, executionOptions, goalRunEnabled }: {
   controller: BoardController
   task: TaskRecord
   pending: boolean
@@ -215,19 +215,16 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
    * stored value is never rewritten by it, and the explanation below says so.
    */
   goalRunEnabled: boolean
-  attachWorkspace: (node: HTMLSelectElement | null) => void
 }) {
   const options = executionOptions
   const models = options.models ?? []
-  const workspaceId = task.workspaceId ?? ''
   const mode = task.mode ?? ''
   const permission = task.permission ?? ''
   const model = task.model ?? ''
   const reasoningEffort = task.reasoningEffort ?? ''
-  // A pinned target may disappear from the runtime (workspace deleted,
-  // preset removed); keep it selectable as a stale row instead of silently
-  // dropping it, so the user sees exactly what the task will ask for.
-  const workspaceKnown = workspaceId === '' || options.workspaces.some(item => item.workspaceId === workspaceId)
+  // A pinned target may disappear from the runtime (preset removed); keep it
+  // selectable as a stale row instead of silently dropping it, so the user
+  // sees exactly what the task will ask for.
   const modeKnown = mode === '' || options.presets.some(item => item.id === mode)
   const modelKnown = model === '' || models.some(item => item.id === model)
   // One line for the closed fold: which switches are on.
@@ -239,23 +236,6 @@ function ExecutionSettingsSection({ controller, task, pending, executionOptions,
   return (
     <section className={css.detailSection}>
       <p className={css.detailText} title={t('exec.hint')}>{t('exec.hint.short')}</p>
-      <label className={css.field}>
-        <span className={css.fieldLabel}>{t('new.workspace')}</span>
-        <select
-          className={css.select}
-          ref={attachWorkspace}
-          aria-label={t('new.workspace')}
-          value={workspaceId}
-          disabled={pending}
-          onChange={event => { controller.updateTask(task.id, { workspaceId: event.target.value }) }}
-        >
-          <option value="">{t('exec.workspace.recent')}</option>
-          {!workspaceKnown && <option value={workspaceId}>{workspaceId}{t('exec.mode.removed')}</option>}
-          {options.workspaces.map(workspace => (
-            <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.title}</option>
-          ))}
-        </select>
-      </label>
       <label className={css.field}>
         <span className={css.fieldLabel}>{t('new.agentPreset')}</span>
         <select
@@ -847,15 +827,6 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
   const [settingsOpen, setSettingsOpen] = useState(false)
   const tabsId = useId()
   const headingId = useId()
-  const workspaceSelect = useRef<HTMLSelectElement | null>(null)
-  const focusWorkspace = useRef(false)
-  const attachWorkspace = useCallback((node: HTMLSelectElement | null) => {
-    workspaceSelect.current = node
-    if (node !== null && focusWorkspace.current) {
-      focusWorkspace.current = false
-      node.focus()
-    }
-  }, [])
 
   // Keep the overlay in sync if the task record changes underneath.
   const [latest, setLatest] = useState(task)
@@ -867,7 +838,6 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
     setShowDuplicate(false)
     setActiveTab(0)
     setSettingsOpen(false)
-    focusWorkspace.current = false
   }, [task.id])
   const current = latest
   const seats = useTaskBoardSeats()
@@ -911,10 +881,6 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
         : t(EXECUTION_RESULT_KEY[latestExecution.result]),
     })
   const { workspaces, presets } = snapshot.executionOptions
-  const workspaceId = current.handover?.workspaceId ?? current.workspaceId
-  const workspaceLabel = workspaceId === undefined
-    ? t('exec.workspace.recent')
-    : workspaces.find(workspace => workspace.workspaceId === workspaceId)?.title ?? workspaceId
   const mode = current.handover?.mode ?? current.mode
   const preset = presets.find(option => mode === undefined ? option.isDefault : option.id === mode)
   const permission = current.handover?.permission ?? current.permission
@@ -1147,22 +1113,7 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
               <h3>{t('detail.taskSettings')}</h3>
               <ProjectField value={resolveProjectId(current) ?? null} projects={workspaces}
                 disabled={archived || busy || pending}
-                onChange={projectId => { void controller.updateTask(current.id, { projectId }) }} />
-              <dl className={css.detailWorkspace}>
-                <dt>{t('new.workspace')}</dt>
-                <dd>
-                  <span title={workspaceLabel}>{workspaceLabel}</span>
-                  {!archived && current.handover?.workspaceId === undefined && (
-                    <button type="button" className={css.linkButton} disabled={pending}
-                      aria-label={t('detail.changeWorkspace')}
-                      onClick={() => {
-                        setSettingsOpen(true)
-                        if (workspaceSelect.current === null) focusWorkspace.current = true
-                        else workspaceSelect.current.focus()
-                      }}>{t('detail.changeWorkspace.short')}</button>
-                  )}
-                </dd>
-              </dl>
+                onChange={projectId => { void controller.updateTask(current.id, { projectId, workspaceId: projectId ?? '' }) }} />
               {permissionPending && (
                 <section className={css.detailSection} data-dsh-part="permission-gate">
                   <p className={css.formError}>{t('detail.permissionPending', { permission: t(`exec.permission.${current.handover?.permission ?? current.permission}` as TaskBoardKey) })}</p>
@@ -1183,7 +1134,6 @@ export function TaskDetail({ controller, task, phase = 'open' }: { controller: B
                         pending={pending}
                         executionOptions={snapshot.executionOptions}
                         goalRunEnabled={snapshot.host?.goalRunEnabled === true}
-                        attachWorkspace={attachWorkspace}
                       />
                     </FoldSection>
                     {!unaccepted && <ScheduleSection controller={controller} task={current} pending={pending} />}

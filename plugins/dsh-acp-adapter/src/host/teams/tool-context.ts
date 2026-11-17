@@ -5,14 +5,14 @@ import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 
 /** Optional Team ownership and ACP context limits for the shared DSH tool bridge. */
 export function createTeamToolContext(ctx: Context, agent: Agent) {
-  const initial = ctx.get('agentTeams', false)?.tryMembership(agent)
+  const initial = ctx.get('agentTeams', false)?.tryMembership?.(agent)
   if (initial === undefined) return undefined
   return {
-    membership: () => ctx.get('agentTeams', false)?.tryMembership(agent),
-    listMembers: () => ctx.get('agentTeams', false)?.listMembers(agent) ?? [],
+    membership: () => ctx.get('agentTeams', false)?.tryMembership?.(agent),
+    listMembers: () => ctx.get('agentTeams', false)?.listMembers?.(agent) ?? [],
     isLive(): boolean {
       const teams = ctx.get('agentTeams', false)
-      const current = teams?.tryMembership(agent)
+      const current = teams?.tryMembership?.(agent)
       if (
         current === undefined ||
         current.id !== initial.id ||
@@ -21,7 +21,7 @@ export function createTeamToolContext(ctx: Context, agent: Agent) {
       )
         return false
       const root = initial.root
-      const lead = teams?.tryMembership(root)
+      const lead = teams?.tryMembership?.(root)
       return (
         ctx.get('agents', false)?.get(root.id) === root &&
         lead?.role === 'lead' &&

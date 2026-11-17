@@ -24,7 +24,7 @@ export function assignProjects(
     const changed = resolveProjectId(task) !== projectId
     const recommendation = task.origin !== undefined || task.recommendation !== undefined || task.planning !== undefined
     return {
-      ...task, projectId, updatedAt: now,
+      ...task, projectId, workspaceId: projectId ?? undefined, updatedAt: now,
       ...(changed && recommendation ? {
         status: 'backlog' as const,
         planning: { state: 'proposed' as const },

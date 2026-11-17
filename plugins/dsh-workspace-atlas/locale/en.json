@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "title": "All-In-One Workspace",
+    "description": "Multi-repo architecture topology visualization and repository knowledge inspector."
+  },
+  "ui": {
+    "title": "All-In-One Workspace",
+    "topology": "Topology",
+    "repositories": "Repositories",
+    "mounted": "Mounted",
+    "skipped": "On-Demand",
+    "skippedShort": "Unmounted",
+    "broken": "Broken Link",
+    "refresh": "Refresh Workspace",
+    "inspector": "Repository Details",
+    "searchPlaceholder": "Search repos, roles, stack…",
+    "unlinked": "No Workspace Linked",
+    "linkAction": "Link Project",
+    "unlinkAction": "Unlink current workspace",
+    "emptyTitle": "Link Workspace or Repository",
+    "emptySubtitle": "Connect a local workspace directory or Git repository URL to generate the architecture atlas",
+    "tabDirectory": "Local Directory",
+    "tabRemote": "Git Remote URL",
+    "dirPlaceholder": "/Users/.../path-to-workspace-or-repo",
+    "remotePlaceholder": "ssh://git@icode.baidu.com:8235/<group>/<dept>/<repo>",
+    "pickDir": "Browse…",
+    "submitLink": "Link Now"
+  }
+}

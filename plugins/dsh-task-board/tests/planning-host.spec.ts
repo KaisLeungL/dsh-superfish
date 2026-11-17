@@ -35,7 +35,7 @@ function accept(board: HostTaskLedger, taskId = 'proposal') {
 }
 
 describe('project ownership and planning authority', () => {
-  it('operator reclassifies absent, explicit-null and independent ownership without redirecting execution', () => {
+  it('operator reclassifies absent, explicit-null and project ownership together with execution workspace', () => {
     // Given an old card and an explicit unassigned card.
     expect(resolveProjectId({ workspaceId: 'execution' })).toBe('execution')
     expect(resolveProjectId({ workspaceId: 'execution', projectId: null })).toBeNull()
@@ -43,8 +43,8 @@ describe('project ownership and planning authority', () => {
     board.applyRequest('create', { kind: 'create', id: 'task', input: { title: 't', description: '', prompt: '', workspaceId: 'execution' } })
     // When the business ownership changes.
     board.applyRequest('update', { kind: 'update', taskId: 'task', patch: { projectId: 'business' } })
-    // Then the execution target stays pinned.
-    expect(board.getTask('task')).toMatchObject({ projectId: 'business', workspaceId: 'execution' })
+    // Then the execution workspace updates together with projectId.
+    expect(board.getTask('task')).toMatchObject({ projectId: 'business', workspaceId: 'business' })
   })
 
   it('operator creates children with inherited ownership or explicit unassigned ownership', () => {

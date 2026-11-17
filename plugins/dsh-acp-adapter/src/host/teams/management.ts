@@ -16,7 +16,13 @@ export function createTeamManagement(
   const resolve = (id: string) => {
     const teams = ctx.get('agentTeams')
     const agent = ctx.get('agents', false)?.get(id as never)
-    if (teams === undefined || agent === undefined || teams.tryMembership(agent)?.role !== 'lead')
+    if (
+      teams === undefined ||
+      typeof teams.tryMembership !== 'function' ||
+      typeof teams.listMembers !== 'function' ||
+      agent === undefined ||
+      teams.tryMembership(agent)?.role !== 'lead'
+    )
       throw new Error('ACP_TEAM_LEAD_UNAVAILABLE')
     const selection = readNativeModelSelection(ctx, agent.session)
     const provider =
@@ -25,7 +31,13 @@ export function createTeamManagement(
     return { teams, agent, provider }
   }
   const resolveLead = async (id: string) => {
-    if (ctx.get('agentTeams') !== undefined && ctx.get('agents', false)?.get(id as never) === undefined) {
+    const teams = ctx.get('agentTeams')
+    if (
+      teams !== undefined &&
+      typeof teams.tryMembership === 'function' &&
+      typeof teams.listMembers === 'function' &&
+      ctx.get('agents', false)?.get(id as never) === undefined
+    ) {
       const provider = await readBindingProvider(id)
       if (provider === undefined || !owns(provider)) throw new Error('ACP_TEAM_LEAD_REQUIRED')
       // Historical reads need not activate the Lead. Reuse the host's deduplicated

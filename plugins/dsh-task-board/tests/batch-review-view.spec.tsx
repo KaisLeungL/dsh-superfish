@@ -98,7 +98,7 @@ describe('batch assignment UI', () => {
     await act(async () => { click(div, t('project.batch.commit')) })
     // Then a single complete request changes ownership, retaining independent execution workspaces.
     expect(actions).toEqual([{ kind: 'assign-projects', taskIds: ['one', 'two'], projectId: 'b', expectedRevision: 2 }])
-    expect(board.getSnapshot().tasks.map(task => [task.projectId, task.workspaceId])).toEqual([['b', 'a'], ['b', 'a']])
+    expect(board.getSnapshot().tasks.map(task => [task.projectId, task.workspaceId])).toEqual([['b', 'b'], ['b', 'b']])
     expect(div.querySelectorAll('input[type="checkbox"]:checked')).toHaveLength(0)
     expect(board.getSnapshot().pendingTaskIds).toEqual([])
     expect(filter.value).toBe('')

@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "title": "All-In-One Workspace",
+    "description": "多仓架构拓扑全景可视化与单仓知识画像详情展示。"
+  },
+  "ui": {
+    "title": "All-In-One Workspace",
+    "topology": "拓扑全景",
+    "repositories": "仓库列表",
+    "mounted": "已挂载",
+    "skipped": "按需未挂载",
+    "skippedShort": "未挂载",
+    "broken": "软链失效",
+    "refresh": "刷新工作区状态",
+    "inspector": "仓库详情",
+    "searchPlaceholder": "搜索仓库、职责或技术栈…",
+    "unlinked": "未关联工作区",
+    "linkAction": "关联项目",
+    "unlinkAction": "解除当前工作区关联",
+    "emptyTitle": "关联多仓工作区或代码仓库",
+    "emptySubtitle": "关联本地 Roma 工作区目录或 Git 仓库地址，自动生成架构拓扑全景与知识画像",
+    "tabDirectory": "本地工作区 / 目录",
+    "tabRemote": "Git 仓库地址",
+    "dirPlaceholder": "/Users/.../本地工作区或项目目录路径",
+    "remotePlaceholder": "ssh://git@icode.baidu.com:8235/<group>/<dept>/<repo>",
+    "pickDir": "浏览…",
+    "submitLink": "立即关联"
+  }
+}

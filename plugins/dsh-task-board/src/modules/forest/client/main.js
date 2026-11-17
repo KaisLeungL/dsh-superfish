@@ -175,19 +175,36 @@ function createPlugin(React) {
         const firstTile = Math.max(1, Math.min(island - 2, view.currentIsland - 4));
         const tiles = Array.from({ length: Math.min(view.currentIsland, 6) }, (_, i) => firstTile + i).filter(n => n <= view.currentIsland);
         return h(Root, { className: 'tfPage tfPageEnter' }, h('div', { className: 'tfWrap' },
-          h('header', { className: 'tfHeading' }, h('div', null, h('div', { className: 'tfEyebrow' }, t('eyebrow')), h('h1', null, t('headline')), h('p', null, t('intro'))), h('div', { className: 'tfActions' }, h(Button, { icon: 'room', onClick: () => setRoomOpen(true) }, t(view.room.mode === 'none' ? 'notJoined' : 'manage')), h(Button, { onClick: () => navigate('task-forest.ranking') }, t('ranking'), h(Icon, { name: 'arrow' })))),
-          !s.connected && h('p', { className: 'tfConnection', role: 'status' }, t('connectionLost')),
-          view.error && h('p', { className: 'tfError', role: 'alert' }, view.error),
-          h('div', { className: 'tfStats' }, [['total', view.total, 'trees'], ['islands', view.completedIslands], ['today', view.counts.day, 'trees']].map(([key, value, unit]) => h('div', { className: 'tfStat', key }, h('span', null, t(key)), h('strong', null, value, unit && h('small', null, t(unit)))))),
-          h('div', { className: 'tfMainGrid' }, h('div', null,
-            h('section', { className: 'tfIslandStage' }, h('div', { className: 'tfStageTop' }, h('h2', null, t('island', { n: String(island).padStart(2, '0') })), h('span', { className: 'tfPill' }, h('i', { className: 'tfDot' }), t(count === 16 ? 'complete' : 'current'))),
+          h('header', { className: 'tfTopBar' },
+            h('div', { className: 'tfStats' }, [['total', view.total, 'trees'], ['islands', view.completedIslands], ['today', view.counts.day, 'trees']].map(([key, value, unit]) => h('div', { className: 'tfStat', key }, h('span', null, t(key)), h('strong', null, value, unit && h('small', null, t(unit)))))),
+            h('div', { className: 'tfActions' },
+              !s.connected && h('span', { className: 'tfConnection', role: 'status' }, t('connectionLost')),
+              view.error && h('span', { className: 'tfError', role: 'alert' }, view.error),
+              h(Button, { icon: 'room', onClick: () => setRoomOpen(true) }, t(view.room.mode === 'none' ? 'notJoined' : 'manage')))),
+          h('div', { className: 'tfMainGrid' },
+            h('section', { className: 'tfIslandStage' },
+              h('div', { className: 'tfStageTop' },
+                h('div', { className: 'tfStageTitleGroup' },
+                  h('h2', null, t('island', { n: String(island).padStart(2, '0') })),
+                  h('span', { className: 'tfPill' }, h('i', { className: 'tfDot' }), t(count === 16 ? 'complete' : 'current'))),
+                h('div', { className: 'tfProgressInfo' },
+                  h('span', { className: 'tfProgressCount' }, `${count} / 16`),
+                  h(Progress, { count }))),
               h(Art, { count, island, className: 'tfArt' }, h('svg', { className: 'tfArtHits', viewBox: `0 0 ${ISLAND_WIDTH} ${ISLAND_HEIGHT}`, role: 'group', 'aria-label': t('island', { n: island }) }, rewards.map(r => {
                 const p = treePlacement(island, r.position);
                 return h('ellipse', { className: 'tfTreeHit', key: r.id, cx: p.x, cy: p.y - p.height * .4, rx: p.width * .35, ry: p.height * .4, tabIndex: 0, role: 'button', 'aria-label': t('treeLabel', { n: r.position, title: r.title }), onClick: () => setReward(r), onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setReward(r); } } });
               }))),
-              h('div', { className: 'tfStageBottom' }, h('div', { className: 'tfProgressInfo' }, h('strong', null, t(view.total === 0 ? 'first' : 'progress', { n: count })), h(Progress, { count }), h('p', null, t(count === 16 ? 'islandDone' : view.total === 0 ? 'firstHint' : 'remaining', { n: 16 - count })), islandError && h('p', { className: 'tfError', role: 'alert' }, islandError)), h('div', { className: 'tfIslandNav' }, h(Button, { icon: 'left', 'aria-label': t('previous'), disabled: island <= 1, onClick: () => setSelected(island - 1) }), h(Button, { icon: 'right', 'aria-label': t('next'), disabled: island >= view.currentIsland, onClick: () => setSelected(island + 1) })))),
-            h('section', { className: 'tfCollection' }, h('div', { className: 'tfCollectionHead' }, h('h2', null, t('collection')), h(Button, { onClick: () => navigate('board') }, t('goBoard'))), h('div', { className: 'tfCollectionItems' }, tiles.map(n => { const c = Math.max(0, Math.min(16, view.total - (n - 1) * 16)); return h('button', { type: 'button', className: 'tfIslandTile', 'aria-current': n === island, key: n, onClick: () => setSelected(n) }, h(Art, { count: c, island: n }), h('strong', null, t('island', { n: String(n).padStart(2, '0') })), h('small', null, `${c} / 16 · ${t(c === 16 ? 'complete' : 'current')}`)); }), h('button', { type: 'button', className: 'tfIslandTile', disabled: true }, h('div', { className: 'tfLocked' }, h(Icon, { name: 'lock' })), h('strong', null, t('locked')), h('small', null, t('unlock')))))),
-            h('aside', { className: 'tfAside' }, h('h2', { className: 'tfSectionTitle' }, t('recent'), h(Icon, { name: 'leaf' })), h('p', { className: 'tfAsideIntro' }, t('recentHint')), h('div', { className: 'tfRecentList' }, view.recent.length ? view.recent.slice(0, 5).map(r => h('button', { type: 'button', className: 'tfRecent', key: r.id, onClick: () => setReward(r), title: t('source') }, h('span', { className: 'tfRecentMark' }, h(TreeMark, { island: r.island, position: r.position })), h('span', null, h('span', { className: 'tfRecentTitle' }, r.title), h('span', { className: 'tfRecentMeta' }, date(r.completedAt), h('br'), t('earnedPlace', { island: r.island, position: r.position }))))) : h('p', { className: 'tfEmpty' }, t('emptyRecent'))), h('div', { className: 'tfRule' }, h('strong', null, t('rule')), h('p', null, t('ruleHint'))))),
+              h('div', { className: 'tfStageBottom' },
+                h('div', { className: 'tfCollectionItems' },
+                  tiles.map(n => h('button', { type: 'button', className: 'tfIslandTile', 'aria-current': n === island, key: n, onClick: () => setSelected(n), title: t('island', { n: String(n).padStart(2, '0') }) }, `#${String(n).padStart(2, '0')}`)),
+                  islandError && h('span', { className: 'tfError', role: 'alert' }, islandError)),
+                h('div', { className: 'tfIslandNav' },
+                  h(Button, { icon: 'left', 'aria-label': t('previous'), disabled: island <= 1, onClick: () => setSelected(island - 1) }),
+                  h(Button, { icon: 'right', 'aria-label': t('next'), disabled: island >= view.currentIsland, onClick: () => setSelected(island + 1) })))),
+            h('aside', { className: 'tfAside' },
+              h('h2', { className: 'tfSectionTitle' }, t('recent'), h(Icon, { name: 'leaf' })),
+              h('div', { className: 'tfRecentList' }, view.recent.length ? view.recent.slice(0, 5).map(r => h('button', { type: 'button', className: 'tfRecent', key: r.id, onClick: () => setReward(r), title: t('source') }, h('span', { className: 'tfRecentMark' }, h(TreeMark, { island: r.island, position: r.position })), h('span', { className: 'tfRecentBody' }, h('span', { className: 'tfRecentTitle' }, r.title), h('span', { className: 'tfRecentMeta' }, `${date(r.completedAt)} · #${r.island}-${r.position}`)))) : h('p', { className: 'tfEmpty' }, t('emptyRecent'))),
+              h('div', { className: 'tfRule', title: t('ruleHint') }, t('rule')))),
           roomOpen && h(RoomDialog, { close: () => setRoomOpen(false) }), reward && h(RewardDialog, { reward, close: () => setReward(null), openTask }), h(Notifications, { navigate, onIsland: setSelected })));
       }
       function Ranking({ navigate }) {

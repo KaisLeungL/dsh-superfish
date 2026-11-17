@@ -62,7 +62,7 @@ export function externalAgentPermissionQuestions(
         const identity = view.subagent
         if (identity == null || !root.session.isOwnSeq(identity.seq) || view.acpExecution?.externalSubagent === true)
           throw new ExternalPermissionQuestionError('DELEGATED_CALLER')
-        const membership = ctx.get('agentTeams', false)?.tryMembership(root)
+        const membership = ctx.get('agentTeams', false)?.tryMembership?.(root)
         path.unshift({
           agent: root,
           name:

@@ -7,8 +7,10 @@ import type { HostTaskLedger } from '../host-ledger.ts'
 /** Resolve the actual execution target, including a reused session's directory. */
 export function executionWorkspace(task: TaskRecord, registry: TaskBoardWorkspaceRegistry | undefined, sessionId?: string): { workspaceId: string; directory: string } {
   const items = registry?.list() ?? []
-  const legacyWorker = (task.handover?.mode ?? task.mode) === 'workspace-superagent-worker'
-  const pinnedWorkspace = legacyWorker && task.projectId ? task.projectId : task.workspaceId
+  const projectWorkspace = typeof task.projectId === 'string' && (items.length === 0 || items.some(item => item.id === task.projectId))
+    ? task.projectId
+    : undefined
+  const pinnedWorkspace = projectWorkspace ?? task.workspaceId
   const workspaceId = sessionId === undefined
     ? task.handover?.workspaceId ?? pinnedWorkspace ?? task.projectId ?? mostRecentWorkspaceId(items)
     : workspaceOwningSession(items, sessionId)

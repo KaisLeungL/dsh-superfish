@@ -80,7 +80,7 @@ export function EditTaskModal({ controller, task, onClose, phase }: { controller
       ...(title.trim() === original.title ? {} : { title }),
       ...(description.trim() === original.description ? {} : { description }),
       ...(prompt.trim() === original.prompt ? {} : { prompt }),
-      ...(projectId === (resolveProjectId(original) ?? null) ? {} : { projectId }),
+      ...(projectId === (resolveProjectId(original) ?? null) ? {} : { projectId, workspaceId: projectId ?? '' }),
       ...(targetDate === (original.targetDate ?? '') ? {} : { targetDate: targetDate || null }),
       ...(tagsChanged ? { tags: tagList.length > 0 ? tagList : null } : {}),
       // An array REPLACES the stored set; an explicit null clears it. A card

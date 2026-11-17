@@ -33,8 +33,8 @@ export function installTeamMemberModelFacts(
     try {
       const teams = ctx.get('agentTeams', false)
       const caller = exec.agent
-      const membership = teams?.tryMembership(caller)
-      if (teams === undefined || membership === undefined) return decision
+      const membership = teams?.tryMembership?.(caller)
+      if (teams === undefined || typeof teams.listMembers !== 'function' || membership === undefined) return decision
       const roster = teams.listMembers(caller)
       const rows =
         exec.name === 'list_agents'
@@ -53,11 +53,12 @@ export function installTeamMemberModelFacts(
         }),
       )
       const currentTeams = ctx.get('agentTeams', false)
-      const current = currentTeams?.tryMembership(caller)
+      const current = currentTeams?.tryMembership?.(caller)
       if (
         !active ||
         exec.signal.aborted ||
         currentTeams === undefined ||
+        typeof currentTeams.listMembers !== 'function' ||
         current?.root !== membership.root ||
         current?.id !== membership.id ||
         current?.role !== membership.role ||

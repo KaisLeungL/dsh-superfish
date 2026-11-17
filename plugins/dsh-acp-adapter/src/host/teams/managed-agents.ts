@@ -90,7 +90,12 @@ export function installManagedAgents(ctx: Context, registry: InstalledProfileReg
       },
       async execute(args, exec) {
         const parent = exec.agent
-        if (!accepting || parent === undefined || scope.agentTeams.tryMembership(parent)?.role !== 'lead')
+        if (
+          !accepting ||
+          parent === undefined ||
+          scope.agentTeams.tryMembership?.(parent)?.role !== 'lead' ||
+          typeof scope.agentTeams.spawnTeammate !== 'function'
+        )
           throw new Error('ACP_MANAGED_LEAD_REQUIRED')
         if ((registry.agents().get(args.agent_id) === undefined || registry.agents().get(args.agent_id)?.enabled === false)) throw new Error('ACP_MANAGED_AGENT_UNAVAILABLE')
         const provider = `acp-${args.agent_id}`
@@ -116,7 +121,7 @@ export function installManagedAgents(ctx: Context, registry: InstalledProfileReg
         running.add(operation)
         try { return await operation } finally { running.delete(operation) }
       },
-    }), { when: ({ agent }) => scope.agentTeams.tryMembership(agent)?.role === 'lead' })
+    }), { when: ({ agent }) => scope.agentTeams.tryMembership?.(agent)?.role === 'lead' })
     scope.effect(function* () {
       yield releaseProvider
       yield releaseCreated

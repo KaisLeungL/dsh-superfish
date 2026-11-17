@@ -32,7 +32,7 @@ describe('atomic project assignment', () => {
     // Then exactly one revision persists both assignments with their own audit.
     expect(board.state().revision).toBe(before + 1)
     expect(board.allTasks().map(task => [task.projectId, task.workspaceId, task.timeline?.at(-1)?.kind]))
-      .toEqual([['business', 'execution', 'assign-projects'], ['business', 'execution', 'assign-projects']])
+      .toEqual([['business', 'business', 'assign-projects'], ['business', 'business', 'assign-projects']])
     const persisted = JSON.parse(readFileSync(join(root, 'ledger-v2.json'), 'utf8')) as { tasks: TaskRecord[] }
     expect(persisted.tasks.map(task => task.projectId)).toEqual(['business', 'business'])
   })
@@ -42,10 +42,10 @@ describe('atomic project assignment', () => {
     const { board } = setup()
     const execution = { id: 'old', startedAt: NOW - 2, endedAt: NOW - 1, sessionId: 'session', result: 'succeeded' as const, error: undefined, projectId: 'original' }
     board.saveTaskRecord({ ...board.getTask('b')!, status: 'done', executions: [execution] })
-    // When the user changes only current ownership through the batch action.
+    // When the user changes current ownership through the batch action.
     assign(board)
-    // Then execution history, prompt and execution workspace remain unchanged.
-    expect(board.getTask('b')).toMatchObject({ projectId: 'business', workspaceId: 'execution', prompt: 'work', status: 'done', executions: [execution] })
+    // Then execution history and prompt remain unchanged while workspace follows the project.
+    expect(board.getTask('b')).toMatchObject({ projectId: 'business', workspaceId: 'business', prompt: 'work', status: 'done', executions: [execution] })
   })
 
   it.each(['missing', 'running', 'open', 'archived', 'inspection', 'revision'] as const)(
@@ -85,7 +85,7 @@ describe('atomic project assignment', () => {
     board.applyRequest('reassign', { kind: 'assign-projects', taskIds: ['r', 'a'], projectId: null, expectedRevision: before })
     // Then the old approval cannot authorize the new scope, while evidence and timeline survive.
     const card = board.getTask('r')!
-    expect(card).toMatchObject({ projectId: null, workspaceId: 'execution', status: 'backlog', planning: { state: 'proposed' }, schedule: { enabled: false }, recommendation: { fingerprint: 'fp' } })
+    expect(card).toMatchObject({ projectId: null, workspaceId: undefined, status: 'backlog', planning: { state: 'proposed' }, schedule: { enabled: false }, recommendation: { fingerprint: 'fp' } })
     expect(isUnacceptedRecommendation(card)).toBe(true)
     expect(card.timeline?.map(event => event.kind)).toContain('planning-accept')
     expect(card.timeline?.at(-1)).toMatchObject({ kind: 'assign-projects', detail: JSON.stringify({ fromProjectId: 'old', toProjectId: null, acceptanceReset: true }) })

@@ -77,23 +77,24 @@ describe('project assignment and recommendation UI', () => {
     expect(root.querySelectorAll('article')).toHaveLength(2)
     expect(root.querySelector('[data-dsh-part="card-group"]')).toBeNull()
   })
-  it('user creates an explicitly unassigned task with an independent execution workspace', async () => {
-    // Given an unassigned default and a separate execution workspace
+  it('user creates an explicitly unassigned task with no pinned execution workspace', async () => {
+    // Given an unassigned default
     const created: unknown[] = []
     const c = controller([], { createTaskConfirmed: async input => { created.push(input); return task() } })
     const root = mount(<NewTaskModal controller={c} defaultProjectId={null} defaultWorkspaceId="a" onClose={() => {}} />)
     expect(root.querySelector<HTMLSelectElement>('[data-dsh-part="project-field"]')?.value).toBe('')
-    // When the user saves the task, Then null remains explicit and workspace Alpha is retained
+    // When the user saves the task, Then null remains explicit and no workspace is pinned
     await act(async () => { root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
-    expect(created).toMatchObject([{ projectId: null, workspaceId: 'a' }])
+    expect(created).toMatchObject([{ projectId: null }])
+    expect((created[0] as { workspaceId?: string }).workspaceId).toBeUndefined()
   })
-  it('user reassigns a task without changing its execution workspace', () => {
-    // Given a task assigned to Alpha, When it moves to Beta, Then the execution workspace is untouched
+  it('user reassigns a task and updates its execution workspace together', () => {
+    // Given a task assigned to Alpha, When it moves to Beta, Then the execution workspace updates too
     const updateTask = vi.fn(async () => true)
     const card = task({ projectId: 'a', workspaceId: 'a' })
     const root = mount(<TaskDetail task={card} controller={controller([card], { updateTask })} />)
     choose(root.querySelector<HTMLSelectElement>('[data-dsh-part="project-field"]')!, 'b')
-    expect(updateTask).toHaveBeenCalledWith('t', { projectId: 'b' })
+    expect(updateTask).toHaveBeenCalledWith('t', { projectId: 'b', workspaceId: 'b' })
   })
   it('user accepts the displayed recommendation or snoozes it without running', () => {
     // Given a proposed recommendation, When its planning actions are selected, Then only planning requests are sent

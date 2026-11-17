@@ -61,13 +61,19 @@ export function createToolApprovalPolicyReader(
       throw new Error('ACP_TOOL_APPROVAL_SESSION_NOT_ACP')
     }
     const teams = ctx.get('agentTeams', false)
-    const membership = agent === undefined ? undefined : teams?.tryMembership(agent)
+    const membership = agent === undefined ? undefined : teams?.tryMembership?.(agent)
     let root: Agent | undefined
     let teamId: string | undefined
     if (membership?.role === 'teammate') {
       root = membership.root
       teamId = membership.id
-    } else if (header.origin === 'subagent' && teams !== undefined && header.parentSession !== undefined) {
+    } else if (
+      header.origin === 'subagent' &&
+      teams !== undefined &&
+      typeof teams.tryMembership === 'function' &&
+      typeof teams.listMembers === 'function' &&
+      header.parentSession !== undefined
+    ) {
       // Every ordinary root is an implicit Lead. A child belongs to its Team
       // only when the authoritative roster contains that exact child id.
       let parent = ctx.get('agents', false)?.get(header.parentSession)
@@ -103,7 +109,7 @@ export function createToolApprovalPolicyReader(
     if (root !== undefined) {
       const lead = root
       const authenticated = (): boolean => {
-        const currentLead = teams?.tryMembership(lead)
+        const currentLead = teams?.tryMembership?.(lead)
         if (
           ctx.get('agents', false)?.get(lead.id) !== lead ||
           currentLead?.role !== 'lead' ||
@@ -112,7 +118,7 @@ export function createToolApprovalPolicyReader(
         )
           return false
         if (agent !== undefined) {
-          const current = teams?.tryMembership(agent)
+          const current = teams?.tryMembership?.(agent)
           return (
             ctx.get('agents', false)?.get(agent.id) === agent &&
             current?.role === 'teammate' &&
@@ -120,7 +126,7 @@ export function createToolApprovalPolicyReader(
             current.id === teamId
           )
         }
-        const row = teams?.listMembers(lead).find((entry) => entry.id === sessionId && entry.role === 'teammate')
+        const row = teams?.listMembers?.(lead).find((entry) => entry.id === sessionId && entry.role === 'teammate')
         return row !== undefined && row.status !== 'failed'
       }
       if (!authenticated()) throw new Error('ACP_TOOL_APPROVAL_LEAD_UNAVAILABLE')

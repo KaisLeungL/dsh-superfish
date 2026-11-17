@@ -86,11 +86,11 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   // what makes the Host inherit the parent's binding together with its human
   // confirmation, while picking a value pins this card's own binding and
   // re-arms the gate. A parent's permission never travels here at all.
-  const [workspaceId, setWorkspaceId] = useState(initialTask?.workspaceId ?? parentTask?.workspaceId ?? defaultWorkspaceId ?? '')
   const [projectId, setProjectId] = useState<string | null>(() => {
     const source = initialTask ?? parentTask
     return source === undefined ? (defaultProjectId !== undefined ? defaultProjectId : defaultWorkspaceId ?? null) : resolveProjectId(source)
   })
+  const workspaceId = projectId ?? ''
   const [targetDate, setTargetDate] = useState('')
   const [completionPolicy, setCompletionPolicy] = useState<'auto' | 'human-review'>(initialTask?.completionPolicy ?? parentTask?.completionPolicy ?? 'auto')
   const [mode, setMode] = useState(seed.mode)
@@ -161,7 +161,6 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
   // preset removed) — especially when the form starts from a subtask's parent.
   // Keep it selectable as a stale row, so the field shows what the create
   // action will actually send instead of silently displaying the default.
-  const workspaceKnown = workspaceId === '' || options.workspaces.some(item => item.workspaceId === workspaceId)
   const modeKnown = mode === '' || options.presets.some(item => item.id === mode)
   const modelKnown = model === '' || models.some(item => item.id === model)
 
@@ -552,21 +551,6 @@ export function NewTaskModal({ controller, onClose, initialTask, defaultWorkspac
           <TargetDateField value={targetDate} disabled={pending} onChange={setTargetDate} />
 
           <CollapsibleSection title={t('new.section.execution')} summary={executionSummary}>
-            <label className={css.field}>
-              <span className={css.fieldLabel}>{t('new.workspace')}</span>
-              <select
-                className={css.select}
-                value={workspaceId}
-                onChange={event => { setWorkspaceId(event.target.value) }}
-              >
-                <option value="">{t('exec.workspace.recent')}</option>
-                {!workspaceKnown && <option value={workspaceId}>{workspaceId}{t('exec.mode.removed')}</option>}
-                {options.workspaces.map(workspace => (
-                  <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.title}</option>
-                ))}
-              </select>
-            </label>
-
             <label className={css.field}>
               <span className={css.fieldLabel}>{t('new.agentPreset')}</span>
               <select

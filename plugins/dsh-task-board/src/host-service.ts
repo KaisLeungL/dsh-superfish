@@ -624,6 +624,9 @@ export class TaskBoardHostService {
     // A subtask inherits its lineage instead, and an explicit pin is the user's.
     if ((input.parentId ?? '').trim() !== '') return action
     if ((input.workspaceId ?? '').trim() !== '') return action
+    if (input.projectId !== undefined) {
+      return input.projectId === null ? action : { ...action, input: { ...input, workspaceId: input.projectId } }
+    }
     const workspaceId = workspaceOwningSession(this.workspaceRegistry?.list() ?? [], initiator)
     if (workspaceId === undefined) return action
     return { ...action, input: { ...input, workspaceId } }

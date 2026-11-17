@@ -122,14 +122,13 @@ describe('create-task dialog regions', () => {
   it('user expanding a region reaches the configuration it holds', () => {
     // Given the new-task dialog with its execution region collapsed
     const container = renderModal()
-    expect(container.textContent).not.toContain(t('new.workspace'))
+    expect(container.textContent).not.toContain(t('new.agentPreset'))
 
     // When the user expands that region
     openFormSection(container, t('new.section.execution'))
 
     // Then its fields are rendered and the header reports the open state
     expect(regionHeader(container, t('new.section.execution')).getAttribute('aria-expanded')).toBe('true')
-    expect(container.textContent).toContain(t('new.workspace'))
     expect(container.textContent).toContain(t('new.agentPreset'))
   })
 

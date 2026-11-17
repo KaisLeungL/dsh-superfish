@@ -107,12 +107,19 @@ export function applyUpdateTask(
     if (task.id !== id) return task
     if (targetDate !== undefined && !canEditTaskContent(task)) throw new Error('task target date is read-only')
     const { targetDate: _targetDate, freeze: freezePatch, handover: handoverPatch, tags: tagsPatch, attachments: attachmentsPatch, ...rest } = patch
-    const workspaceId = 'workspaceId' in patch ? normalizeTargetId(patch.workspaceId) : undefined
+    const workspaceId = 'workspaceId' in patch
+      ? normalizeTargetId(patch.workspaceId)
+      : 'projectId' in patch
+        ? normalizeTargetId(patch.projectId ?? undefined)
+        : undefined
     const mode = 'mode' in patch ? normalizeTargetId(patch.mode) : undefined
     const permission = 'permission' in patch ? normalizePermission(task.permission, patch.permission) : undefined
     const model = 'model' in patch ? normalizeTargetId(patch.model) : undefined
     const reasoningEffort = 'reasoningEffort' in patch ? normalizeTargetId(patch.reasoningEffort) : undefined
     const next: TaskRecord = { ...task, ...rest, updatedAt: now }
+    if ('workspaceId' in patch && !('projectId' in patch)) {
+      next.projectId = workspaceId ?? null
+    }
     if (targetDate !== undefined) {
       next.targetDate = targetDate ?? undefined
       if (next.targetDate !== task.targetDate) delete next.targetTime
@@ -153,7 +160,7 @@ export function applyUpdateTask(
     // pins a card out of the gate; false (or an explicit null) returns it to
     // inheriting the board-wide switch and stores nothing.
     if ('skipVerification' in patch) next.skipVerification = patch.skipVerification === true ? true : undefined
-    if (workspaceId !== undefined || 'workspaceId' in patch) next.workspaceId = workspaceId
+    if (workspaceId !== undefined || 'workspaceId' in patch || 'projectId' in patch) next.workspaceId = workspaceId
     if (mode !== undefined || 'mode' in patch) next.mode = mode
     if (permission !== undefined || 'permission' in patch) next.permission = permission
     if (model !== undefined || 'model' in patch) next.model = model

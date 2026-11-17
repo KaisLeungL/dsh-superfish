@@ -432,25 +432,18 @@ describe('folded execution column', () => {
     expect(schedule.title).toContain(t('detail.schedule.summary.off'))
   })
 
-  it('user changing the workspace opens settings and lands on its selector', () => {
+  it('user changing the project assignment updates both projectId and workspaceId', () => {
     // Given a task pinned to a work area
     const { container, controller: board } = renderDetail(card({ workspaceId: 'pinned' }))
-    const settings = foldHeader(container, t('detail.executionSettings'))
 
-    // When the user chooses Change from the workspace summary
-    const change = container.querySelector<HTMLButtonElement>(`[aria-label="${t('detail.changeWorkspace')}"]`)!
-    act(() => { change.click() })
-
-    // Then the expanded selector is focused and changes go through the controller
-    const workspace = document.activeElement as HTMLSelectElement
-    expect(settings.getAttribute('aria-expanded')).toBe('true')
-    expect(workspace.tagName).toBe('SELECT')
-    expect(workspace.value).toBe('pinned')
+    // When the user clears the project assignment
+    const project = container.querySelector<HTMLSelectElement>('[data-dsh-part="project-field"]')!
+    expect(project.value).toBe('pinned')
     act(() => {
-      workspace.value = ''
-      workspace.dispatchEvent(new Event('change', { bubbles: true }))
+      project.value = ''
+      project.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    expect(board.updateTask).toHaveBeenCalledWith('card-1', { workspaceId: '' })
+    expect(board.updateTask).toHaveBeenCalledWith('card-1', { projectId: null, workspaceId: '' })
   })
 
   it('user opening the schedule fold gets the editor with every field it always had', () => {

@@ -143,11 +143,9 @@ describe('TaskBoard project partition (#1536)', () => {
     }))
     choose(container.querySelector<HTMLSelectElement>('[data-dsh-part="project-filter"]')!, 'w1')
     act(() => { buttonWith(container, t('board.new')).click() })
-    openFormSection(container, t('new.section.execution'))
-    const workspaceSelect = [...container.querySelectorAll('select')]
-      .find(select => [...select.options].some(option => option.textContent === t('exec.workspace.recent')))
-    expect(workspaceSelect).toBeDefined()
-    expect(workspaceSelect!.value).toBe('w1')
+    const projectSelect = container.querySelector<HTMLSelectElement>('[data-dsh-part="project-field"]')
+    expect(projectSelect).not.toBeNull()
+    expect(projectSelect!.value).toBe('w1')
   })
 
   it('registers a new project through the runtime and switches to it', async () => {

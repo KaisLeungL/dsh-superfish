@@ -6,28 +6,26 @@ DSH Super Workbench 是一组面向 DeepSeek Harness（DSH）的插件。用任�
 
 ## 是什么
 
-工作台通过 DSH 的 profile 机制装配九个协同插件。任务看板负责记录任务和状态，大肥鱼（Super Agent）提供个人长期主理、联邦记忆、技能习得、目标自驱与协调派工入口，GenUI 中间件提供生成式可视化卡片渲染，ACP Adapter 管理外部智能体接入及会话。可以按场景选择插件，涉及定时任务时配套安装 Host 和 UI。
+工作台通过 DSH 的 profile 机制装配六个协同插件。任务看板负责记录任务和状态，大肥鱼（Super Agent）提供个人长期主理、联邦记忆、技能习得、目标自驱、协调派工、OpenTiny GenUI 生成式可视化卡片渲染、只读工作区上下文总线与定时任务生命周期/导航能力，仓库拓扑全景（Workspace Atlas）提供多仓架构拓扑与单仓知识画像速览，ACP Adapter 管理外部智能体接入及会话。
 
 | 使用场景 | 从哪里开始 |
 | --- | --- |
 | 整理项目任务、查看执行进度 | 打开任务看板 |
 | 汇总待办、管理记忆/技能/目标或跟进委派 | 打开大肥鱼（Super Agent）主页面与右侧四栏个人面板 |
+| 浏览多仓架构拓扑、查看单仓知识画像与联调门禁 | 打开侧栏 All-In-One Workspace（仓库拓扑全景） |
 | 接入外部 ACP 智能体 | 在 DSH 设置中配置 Agent Provider |
-| 查看或管理定时任务 | 打开自动化任务面板 |
+| 查看或管理定时任务 | 打开自动化任务面板（大肥鱼已内置定时任务 Host 服务与面板跳转导航） |
 | 开始一段专注时间 | 点击侧栏底部的番茄钟 |
 
 ## 功能插件
 
 | 插件 | 包名 | 版本 | 功能 |
 | --- | --- | --- | --- |
-| [大肥鱼 (SuperFish)](plugins/dsh-superfish/README.md) | `@local/dsh-superfish` | `1.0.0` | 个人长期主理与超级执行主理：联邦记忆、技能构建、长周期目标、待办、快捷提案与 Worker 沙盒派工 |
-| [大肥鱼 GenUI 中间层](plugins/dsh-superfish-genui/README.md) | `@local/dsh-superfish-genui` | `0.1.0` | 基于 OpenTiny GenUI SDK 的动态物料提示词生成、流式 JSON 修复与自定义卡片注册中心 |
+| [大肥鱼 (SuperFish)](plugins/dsh-superfish/README.md) | `@local/dsh-superfish` | `1.0.0` | 个人长期主理与超级执行主理：联邦记忆、技能构建、长周期目标、待办、快捷提案、Worker 沙盒派工，内置 OpenTiny GenUI 生成式卡片服务（`superagentGenui` / `superagentGenuiClient`）、工作区只读上下文总线（`workspaceContext`）与定时任务宿主/导航服务（`schedule-host` / `scheduleNavigation`） |
+| [仓库拓扑全景 (Workspace Atlas)](plugins/dsh-workspace-atlas/README.md) | `@local/dsh-workspace-atlas` | `0.1.0` | 多仓架构拓扑全景可视化、单仓四件套知识画像速览、SDK 联调门禁巡检与 `workspace_atlas` 工具 |
 | [任务看板](plugins/dsh-task-board/README.zh.md) | `@linxin666/dsh-client-ui-task-board` | `0.4.16` | 管理任务、调度与执行记录，内含巡检、森林、GitHub、团队和远程模块 |
 | [Agent Provider](plugins/dsh-acp-adapter/README.md) | `@zaimokuza/dsh-acp-adapter` | `0.2.2-rc.1-local.8` | 外部 ACP 智能体的配置、接入和会话管理 |
-| [定时任务 Host](plugins/dsh-quick-actions-schedule-host) | `@local/dsh-quick-actions-schedule-host` | `0.1.1` | 定时任务的宿主服务 |
-| [定时任务 UI](plugins/dsh-quick-actions-schedule-ui) | `@local/dsh-quick-actions-schedule-ui` | `0.1.0` | 自动化任务面板 |
 | [番茄钟](plugins/dsh-pomodoro/README.md) | `@local/dsh-pomodoro-clock` | `1.1.0` | 专注、休息计时和完成提醒 |
-| [工作区上下文](plugins/dsh-workspace-context/README.md) | `@local/dsh-workspace-context` | `0.1.1` | 为工作区、看板、定时任务和跨工作区会话提供只读上下文 |
 | [受管输入准入](plugins/dsh-input-admission-cap4/README.md) | `@local/dsh-input-admission-cap4` | `0.1.0` | 为受管会话提供输入提交前的授权检查 |
 
 ## 快速上手
@@ -56,9 +54,8 @@ pnpm --filter @local/dsh-superfish pack --pack-destination "$PWD"
 ## 兼容性与已知限制
 
 - 当前依赖基线为 DSH `0.2.2-rc.1`。Super Agent 的受管运行依赖宿主提供 Cap4 输入准入能力。
-- 输入准入配置会替换默认 Agent Loop，Quick Actions 的 Host 和 UI 会替换内置定时服务和面板。首次联调宜使用独立 profile。
-- Quick Actions Host `0.1.1` 和 UI `0.1.0` 随仓库提供构建产物。两包的上游源码和构建链待补齐。
-- 当前按插件包构建和安装。八包在同一桌面 profile 中重启后的联合验收待完成。
+- 输入准入配置会替换默认 Agent Loop，大肥鱼内置的 `schedule-host` 会接管宿主定时服务并保留内置 `ui-schedule` 面板，首次联调宜使用独立 profile。
+- 原 `@local/dsh-superfish-genui`、`@local/dsh-workspace-context`、`@local/dsh-quick-actions-schedule-host` 与 `@local/dsh-quick-actions-schedule-ui` 已整合进 `@local/dsh-superfish` 随包构建，无需再单独安装。
 
 ## 项目来源
 

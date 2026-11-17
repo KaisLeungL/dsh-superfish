@@ -30,7 +30,7 @@ export function createMemberModels(ctx: Context, { sidecar, adapterFor }: Member
       : undefined
   }
   const install = async (agent: Agent): Promise<void> => {
-    if (ctx.get('agentTeams')?.tryMembership(agent)?.role !== 'teammate') return
+    if (ctx.get('agentTeams')?.tryMembership?.(agent)?.role !== 'teammate') return
     const provider = agent.model.current()?.provider ?? agent.options.provider
     if (provider === undefined || adapterFor(provider) === undefined) return
     const saved = await selectionFor(agent.id, provider)

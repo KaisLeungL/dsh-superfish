@@ -74,10 +74,15 @@ export function applyCreateTask(
     parent === undefined ? undefined : { kind: 'parent', task: parent },
     { mode: input.mode, permission: input.permission, model: input.model, reasoningEffort: input.reasoningEffort },
   )
+  const resolvedWorkspaceId = input.workspaceId !== undefined
+    ? input.workspaceId
+    : input.projectId !== undefined
+      ? (input.projectId ?? undefined)
+      : parent?.workspaceId
   const effective: NewTaskInput = {
     ...input,
     ...(targetDate === undefined ? {} : { status: targetDateStatus(targetDate, calendarDay(now, hostTimeZone)) }),
-    workspaceId: input.workspaceId ?? parent?.workspaceId,
+    workspaceId: resolvedWorkspaceId,
     ...(input.projectId === undefined && parent !== undefined ? { projectId: resolveProjectId(parent) } : {}),
     mode: seed.mode,
     permission: isTaskPermission(seed.permission) ? seed.permission : undefined,
