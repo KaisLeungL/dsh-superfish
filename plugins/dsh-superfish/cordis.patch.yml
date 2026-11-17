@@ -1,7 +1,14 @@
-# 安装该 bundle 时集成定时任务宿主、GenUI 中间层、只读工作区上下文总线与大肥鱼主理/预设入口。
+# 安装该 bundle 时接管输入准入（内置 Agent Loop Cap4 驱动，随本包发布）并集成定时任务宿主、GenUI 中间层、只读工作区上下文总线与大肥鱼主理/预设入口。
 - id: schedule
   disabled: true
+- id: agent-loop
+  disabled: true
 - insert:
+    - id: input-admission-cap4
+      name: '@local/dsh-superfish/input-admission'
+      config:
+        agents: []
+        maxParallelToolCalls: 10
     - id: quick-actions-schedule-host
       name: '@local/dsh-superfish/schedule-host'
     - id: superagent-genui

@@ -49,7 +49,7 @@ if (!supplied) {
   await mkdir(root + '/workspace');
   await mkdir(root + '/private', { mode: 0o700 });
   command([...args, '--from-default-profile', 'web', '--help']);
-  command(['plugin', ...args, 'add', workspace + '/plugins/dsh-input-admission-cap4', plugin, '--ignore-scripts']);
+  command(['plugin', ...args, 'add', plugin, '--ignore-scripts']);
   await cp(workspace + '/.superagent-product-lab/e37/frozen-e37-v1/board-baseline', root + '/board',
     { recursive: true, dereference: false, verbatimSymlinks: true });
   await writeFile(root + '/owners.json', '{"version":1,"taskIds":[]}\n');
@@ -104,7 +104,7 @@ export function board(ctx) {
   const entries = [
     { id: 'chat-lab-fixture', name: root + '/fixture.mjs' },
     { id: 'chat-lab-board', name: root + '/board-entry.mjs' },
-    { id: 'input-admission-cap4', name: '@local/dsh-input-admission-cap4', config: { agents: [], maxParallelToolCalls: 10 } },
+    { id: 'input-admission-cap4', name: '@local/dsh-superfish/input-admission', config: { agents: [], maxParallelToolCalls: 10 } },
   ];
   const yaml = rows => base + rows.map(row => '    - ' + JSON.stringify(row)).join('\n') + '\n';
   await writeFile(root + '/setup.yml', yaml(entries));

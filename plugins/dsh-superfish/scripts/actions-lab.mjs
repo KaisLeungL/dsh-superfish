@@ -52,7 +52,7 @@ if (!supplied) {
   await mkdir(root+'/workspace');
   await mkdir(root+'/private',{ mode:0o700 });
   cmd([...profile,'--from-default-profile','web','--help']);
-  cmd(['plugin',...profile,'add',project+'/plugins/dsh-input-admission-cap4',pluginSpec,board,'--ignore-scripts','--offline']);
+  cmd(['plugin',...profile,'add',pluginSpec,board,'--ignore-scripts','--offline']);
   const provider='superagent-actions-fixture';
   const schedule='dsh.schedule.create', task='dsh.taskBoard.create';
   const cases=[

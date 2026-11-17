@@ -21,12 +21,11 @@ DSH Super Workbench 是一组面向 DeepSeek Harness（DSH）的插件。用任�
 
 | 插件 | 包名 | 版本 | 功能 |
 | --- | --- | --- | --- |
-| [大肥鱼 (SuperFish)](plugins/dsh-superfish/README.md) | `@local/dsh-superfish` | `1.0.0` | 个人长期主理与超级执行主理：联邦记忆、技能构建、长周期目标、待办、快捷提案、Worker 沙盒派工，内置 OpenTiny GenUI 生成式卡片服务（`superagentGenui` / `superagentGenuiClient`）、工作区只读上下文总线（`workspaceContext`）与定时任务宿主/导航服务（`schedule-host` / `scheduleNavigation`） |
+| [大肥鱼 (SuperFish)](plugins/dsh-superfish/README.md) | `@local/dsh-superfish` | `1.0.0` | 个人长期主理与超级执行主理：联邦记忆、技能构建、长周期目标、待办、快捷提案、Worker 沙盒派工，内置 OpenTiny GenUI 生成式卡片服务（`superagentGenui` / `superagentGenuiClient`）、工作区只读上下文总线（`workspaceContext`）、定时任务宿主/导航服务（`schedule-host` / `scheduleNavigation`）与 Cap4 输入准入驱动（`input-admission`） |
 | [仓库拓扑全景 (Workspace Atlas)](plugins/dsh-workspace-atlas/README.md) | `@local/dsh-workspace-atlas` | `0.1.0` | 多仓架构拓扑全景可视化、单仓四件套知识画像速览、SDK 联调门禁巡检与 `workspace_atlas` 工具 |
 | [任务看板](plugins/dsh-task-board/README.zh.md) | `@linxin666/dsh-client-ui-task-board` | `0.4.16` | 管理任务、调度与执行记录，内含巡检、森林、GitHub、团队和远程模块 |
 | [Agent Provider](plugins/dsh-acp-adapter/README.md) | `@zaimokuza/dsh-acp-adapter` | `0.2.2-rc.1-local.8` | 外部 ACP 智能体的配置、接入和会话管理 |
 | [番茄钟](plugins/dsh-pomodoro/README.md) | `@local/dsh-pomodoro-clock` | `1.1.0` | 专注、休息计时和完成提醒 |
-| [受管输入准入](plugins/dsh-input-admission-cap4/README.md) | `@local/dsh-input-admission-cap4` | `0.1.0` | 为受管会话提供输入提交前的授权检查 |
 
 ## 快速上手
 
@@ -51,10 +50,13 @@ pnpm --filter @local/dsh-superfish pack --pack-destination "$PWD"
 
 将生成的 `local-dsh-superfish-1.0.0.tgz` 作为本地安装包（或直接从 GitHub Release 下载预构建 `.tgz` 产物）。现有桌面环境升级时，先核对已装版本和本地包路径，尤其是使用定制版看板或 ACP Adapter 的环境。
 
+安装大肥鱼一个包就够：Cap4 输入准入驱动已内联为本包的子路径 `@local/dsh-superfish/input-admission`（源码在 `plugins/dsh-superfish/src/input-admission/runtime.js`），由大肥鱼自己的 `cordis.patch.yml` 禁用 `agent-loop` 并注册该驱动，所以 profile 的 `dsh.profile.bundles` 里只保留 `@local/dsh-superfish` 一条即可，也没有需要额外解析的未发布依赖，不必再配 `pnpm.overrides`。
+
 ## 兼容性与已知限制
 
-- 当前依赖基线为 DSH `0.2.2-rc.1`。Super Agent 的受管运行依赖宿主提供 Cap4 输入准入能力。
-- 输入准入配置会替换默认 Agent Loop，大肥鱼内置的 `schedule-host` 会接管宿主定时服务并保留内置 `ui-schedule` 面板，首次联调宜使用独立 profile。
+- 当前依赖基线为 DSH `0.2.2-rc.1`。受管运行所需的 Cap4 输入准入由大肥鱼随包提供（子路径 `@local/dsh-superfish/input-admission`），不再有独立的输入准入插件包。
+- 大肥鱼的补丁会禁用宿主原 `agent-loop` 并注册 Cap4 驱动（`inputAdmissionVersion === 4`）；同时内置 `schedule-host` 接管宿主定时服务并保留内置 `ui-schedule` 面板，首次联调宜使用独立 profile。
+- 需要单独验证输入准入本身时（诊断模式），可在独立 profile 的 `cordis.patch.yml` 里手动禁用 `agent-loop` 并插入 `@local/dsh-superfish/input-admission`，但不要与大肥鱼的补丁同时生效——同一个 `input-admission-cap4` 条目会被插入两次。
 - 原 `@local/dsh-superfish-genui`、`@local/dsh-workspace-context`、`@local/dsh-quick-actions-schedule-host` 与 `@local/dsh-quick-actions-schedule-ui` 已整合进 `@local/dsh-superfish` 随包构建，无需再单独安装。
 
 ## 项目来源

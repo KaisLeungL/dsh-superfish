@@ -23,6 +23,9 @@
       "types": "./lib/types/schedule-host/index.d.ts",
       "default": "./lib/schedule-host/index.js"
     },
+    "./input-admission": {
+      "default": "./lib/input-admission/index.js"
+    },
     "./schedule-host/locale/zh.json": "./locale/schedule-host/zh.json",
     "./schedule-host/locale/en.json": "./locale/schedule-host/en.json",
     "./schedule-host/icon": "./icon.png",
@@ -74,7 +77,9 @@
     "skills",
     "icon.png",
     "icon.svg",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "LICENSE-input-admission-cap4",
+    "input-admission-source-identity.json"
   ],
   "engines": {
     "dsh": ">=0.2.2-rc.1 <0.3.0"
@@ -98,7 +103,13 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
     "@deepseek-ai/dsh": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-agent": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-brand": ">=0.2.2-rc.1 <0.3.0",
     "@deepseek-ai/dsh-llm": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-scope": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-util-values": ">=0.2.2-rc.1 <0.3.0",
     "@deepseek-ai/dsh-session": ">=0.2.2-rc.1 <0.3.0",
     "@deepseek-ai/dsh-session-persistence": ">=0.2.2-rc.1 <0.3.0",
     "@deepseek-ai/dsh-storage-domain": ">=0.2.2-rc.1 <0.3.0",

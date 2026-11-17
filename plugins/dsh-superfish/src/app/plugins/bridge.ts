@@ -94,7 +94,7 @@ const CORE_EXCLUDED_PACKAGES = new Set<string>([
   '@local/dsh-superfish',
   '@local/dsh-superfish/genui',
   '@local/dsh-superfish-genui',
-  '@local/dsh-input-admission-cap4',
+  '@local/dsh-superfish/input-admission',
   '@local/dsh-superfish/workspace-context',
   '@local/dsh-superfish/workspace-context/task-board',
   '@local/dsh-superfish/workspace-context/session',
