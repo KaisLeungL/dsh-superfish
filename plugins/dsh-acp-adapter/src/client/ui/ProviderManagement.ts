@@ -1,7 +1,17 @@
 /** 稳定 ACP 实例的 Provider 管理页；所有写入仍走原生设置控制器。 */
 import { createElement as h, useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button,
+  IconChevronRightOutlineMedium,
+  IconCodeOutlineMedium,
+  IconPlusOutlineMedium,
+  IconRefreshOutlineMedium,
+  IconSettingsOutlineMedium,
+  IconTrashOutlineMedium,
+  Input,
+  Modal,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { catalogIdOf } from '../../contract/agent-config.ts'
 import { ACP_CATALOG_ENTRIES, catalogEntryOf } from '../data/catalog.ts'
 import {
@@ -19,13 +29,17 @@ import type { AcpSectionWire, AcpTranslate, UsePanelStore } from './AcpSection.t
 import { localizedDiagnostic } from '../data/diagnostics.ts'
 import css from './ProviderManagement.module.css'
 import { ManagedChatGptCard } from './ManagedChatGptCard.ts'
+import { ProviderMenu, ProviderModels } from './ProviderModels.ts'
 
 type Props = { t: AcpTranslate; useStore: UsePanelStore; panel: AcpSectionWire }
 type EditorProps = { t: AcpTranslate; draft: AgentDraft; edit(patch: Partial<AgentDraft>): void; disabled: boolean }
 
 function status(t: AcpTranslate, config: AcpAgentConfig, health: AcpProviderHealth | undefined): string {
   if (config.enabled === false) return t('providerDisabled')
-  if (health?.probe.status === 'ok') return t('stateReady')
+  if (config.authentication === 'chatgpt-managed' && !config.authBinding) return t('managedAuthDisconnected')
+  if (health?.probe.status === 'ok') return t('providerCheckPassed')
+  if (health?.probe.status === 'error' && health.probe.failureKind === 'auth_required')
+    return t('providerSignInRequired')
   if (health?.probe.status === 'error') return t('providerProtocolError')
   return t('providerNotChecked')
 }
@@ -84,27 +98,50 @@ export function ProviderManagement({ t, useStore, panel }: Props): ReactNode {
     'div',
     { className: css.root, 'data-dsh-acp-panel': '', 'data-dsh-acp-management': '' },
     h(
-      'header',
-      { className: css.header },
-      h('p', { className: css.hint }, t('providerScope')),
-      h(
-        Button,
-        { ref: addRef, variant: 'primary', disabled: readOnly || adding, onClick: () => setAdding(true) },
-        '+ ',
-        t('providerAdd'),
-      ),
-    ),
-    readOnly ? h('p', { role: 'status' }, t('readOnly')) : null,
-    failure ? h('p', { className: css.error, role: 'alert' }, t('providerToggleFailed')) : null,
-    snapshot.health.status === 'unreachable'
-      ? h('p', { className: css.error, role: 'status' }, t('healthUnreachable'))
-      : null,
-    h(
       'div',
-      { className: css.layout },
+      { className: css.layout, 'data-adding': adding || undefined },
       h(
         'aside',
-        { className: css.sidebar, 'aria-label': t('providerTitle') },
+        { className: css.sidebar, 'aria-label': t('providerInstances') },
+        h(
+          'header',
+          { className: css.sidebarHeader },
+          h('h3', null, t('providerInstances')),
+          h(
+            'div',
+            { className: css.sidebarActions },
+            h(
+              Button,
+              {
+                ref: addRef,
+                variant: 'outline',
+                size: 'sm',
+                icon: h(IconPlusOutlineMedium, { size: 14 }),
+                'aria-label': t('providerAdd'),
+                disabled: readOnly || adding,
+                onClick: () => setAdding(true),
+              },
+              t('providerAddShort'),
+            ),
+            h(ProviderMenu, {
+              label: t('providerListActions'),
+              items: [
+                {
+                  id: 'check',
+                  label: t('providerCheckAll'),
+                  icon: h(IconRefreshOutlineMedium, { size: 16 }),
+                  disabled: snapshot.health.status === 'loading' || snapshot.health.checkingAgentIds.length > 0,
+                },
+              ],
+              onSelect: () => panel.refreshHealth(true),
+            }),
+          ),
+        ),
+        readOnly ? h('p', { role: 'status' }, t('readOnly')) : null,
+        failure ? h('p', { className: css.error, role: 'alert' }, t('providerToggleFailed')) : null,
+        snapshot.health.status === 'unreachable'
+          ? h('p', { className: css.error, role: 'status' }, t('healthUnreachable'))
+          : null,
         h(Input, {
           type: 'search',
           value: query,
@@ -117,7 +154,6 @@ export function ProviderManagement({ t, useStore, panel }: Props): ReactNode {
           { className: css.list },
           ...filtered.map((key) => {
             const current = agents[key]!
-            const health = healthRowOf(snapshot.health.rows, key)
             return h(
               'li',
               {
@@ -136,33 +172,20 @@ export function ProviderManagement({ t, useStore, panel }: Props): ReactNode {
                     setAdding(false)
                   },
                 },
-                h('strong', null, current.name),
+                h(ProviderMark, { id: key, config: current }),
                 h(
                   'span',
-                  { className: css.type },
-                  catalogEntryOf(catalogIdOf(key, current))?.name ?? t('providerGeneric'),
+                  { className: css.instanceText },
+                  h('strong', null, current.name),
+                  h(
+                    'span',
+                    { className: css.hint },
+                    t(current.enabled === false ? 'providerDisabled' : 'providerEnabledState'),
+                  ),
                 ),
-                h(
-                  'span',
-                  { className: css.state, 'data-ready': current.enabled !== false && health?.probe.status === 'ok' },
-                  current.enabled !== false && current.authentication === 'chatgpt-managed' && !current.authBinding
-                    ? t('managedAuthDisconnected')
-                    : status(t, current, health),
-                ),
-              ),
-              h(
-                'button',
-                {
-                  type: 'button',
-                  role: 'switch',
-                  'aria-checked': current.enabled !== false,
-                  'aria-label': t('providerEnabled', { name: current.name }),
-                  className: css.switch,
-                  title: t('providerDisableHelp'),
-                  disabled: readOnly || pending !== undefined || adding,
-                  onClick: () => void toggle(key),
-                },
-                h('span', null),
+                !adding && key === id
+                  ? h(IconChevronRightOutlineMedium, { size: 14, className: css.selectedChevron })
+                  : null,
               ),
             )
           }),
@@ -170,15 +193,6 @@ export function ProviderManagement({ t, useStore, panel }: Props): ReactNode {
         filtered.length === 0
           ? h('p', { className: css.empty }, t(ids.length === 0 ? 'providerNone' : 'providerNoMatch'))
           : null,
-        h(
-          Button,
-          {
-            variant: 'outline',
-            disabled: snapshot.health.status === 'loading' || snapshot.health.checkingAgentIds.length > 0,
-            onClick: () => panel.refreshHealth(true),
-          },
-          t('providerCheckAll'),
-        ),
       ),
       adding
         ? h(AddProvider, {
@@ -195,7 +209,7 @@ export function ProviderManagement({ t, useStore, panel }: Props): ReactNode {
           })
         : id !== undefined && config !== undefined
           ? h(ProviderDetail, {
-              key: `${id}:${JSON.stringify(config)}`,
+              key: JSON.stringify(draftFromAgent(id, config)),
               t,
               id,
               config,
@@ -205,6 +219,7 @@ export function ProviderManagement({ t, useStore, panel }: Props): ReactNode {
               health: healthRowOf(snapshot.health.rows, id),
               checking: snapshot.health.status === 'loading' || snapshot.health.checkingAgentIds.includes(id),
               checkError: snapshot.health.agentErrors[id],
+              onToggle: () => void toggle(id),
               onDeleted: () => setSelected(''),
             })
           : h('div', { className: css.empty }, t('providerSelect')),
@@ -238,6 +253,15 @@ export function ProviderManagement({ t, useStore, panel }: Props): ReactNode {
         h('option', { value: 'ask' }, t('toolApprovalAsk')),
       ),
     ),
+  )
+}
+
+function ProviderMark({ id, config }: { id: string; config: AcpAgentConfig }): ReactNode {
+  const codex = catalogIdOf(id, config) === 'codex-acp'
+  return h(
+    'span',
+    { className: css.mark, 'aria-hidden': true },
+    codex ? h(IconCodeOutlineMedium, { size: 18 }) : Array.from(config.name)[0]?.toLocaleUpperCase(),
   )
 }
 
@@ -374,6 +398,7 @@ function ProviderDetail({
   health,
   checking,
   checkError,
+  onToggle,
   onDeleted,
 }: {
   t: AcpTranslate
@@ -385,6 +410,7 @@ function ProviderDetail({
   health: AcpProviderHealth | undefined
   checking: boolean
   checkError: string | undefined
+  onToggle(): void
   onDeleted(): void
 }): ReactNode {
   const [draft, setDraft] = useState(() => draftFromAgent(id, config))
@@ -392,6 +418,9 @@ function ProviderDetail({
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [saved, setSaved] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [showHidden, setShowHidden] = useState(false)
+  const connection = useRef<HTMLDetailsElement>(null)
+  const advanced = useRef<HTMLDetailsElement>(null)
   const [count, setCount] = useState<number | undefined>(undefined)
   useEffect(() => {
     if (!confirming) return
@@ -456,160 +485,235 @@ function ProviderDetail({
   }
   const loginHint = config.authentication === 'chatgpt-managed' ? undefined : agentLoginHint(id, config)
   const probe = health?.probe
+  const managed = config.authentication === 'chatgpt-managed'
+  const needsAuthorization = managed && !config.authBinding
+  const refreshUnavailable =
+    config.enabled === false
+      ? t('providerRefreshDisabled')
+      : needsAuthorization
+        ? t('providerRefreshAuthorize')
+        : dirty
+          ? t('providerRefreshSave')
+          : busy
+            ? t('saving')
+            : undefined
+  const showSection = (section: HTMLDetailsElement | null): void => {
+    if (!section) return
+    section.open = true
+    requestAnimationFrame(() => section.querySelector('summary')?.focus())
+  }
+  const onAction = (action: string): void => {
+    if (action === 'check') {
+      showSection(connection.current)
+      panel.refreshAgentHealth(id)
+    } else if (action === 'settings') showSection(advanced.current)
+    else if (action === 'removed') setShowHidden(true)
+    else if (action === 'toggle') onToggle()
+    else if (action === 'delete') setConfirming(true)
+  }
   return h(
     'section',
     { className: css.detail, 'data-provider-detail': id, 'aria-label': config.name },
     h(
       'header',
       { className: css.detailHeader },
-      h('div', null, h('h2', null, config.name), h('code', { className: css.hint }, `acp-${id}`)),
-      h(
-        'span',
-        { className: css.state },
-        config.enabled !== false && config.authentication === 'chatgpt-managed' && !config.authBinding
-          ? t('managedAuthDisconnected')
-          : status(t, config, health),
-      ),
-    ),
-    h(
-      'section',
-      { className: css.group },
       h(
         'div',
-        { className: css.sectionHeading },
-        h('h3', null, t('providerState')),
+        { className: css.identity },
+        h(ProviderMark, { id, config }),
         h(
-          Button,
-          {
-            variant: 'outline',
-            size: 'sm',
-            disabled:
-              checking ||
-              config.enabled === false ||
-              dirty ||
-              busy ||
-              (config.authentication === 'chatgpt-managed' && !config.authBinding),
-            onClick: () => panel.refreshAgentHealth(id),
-          },
-          t(checking ? 'providerChecking' : 'providerCheck'),
-        ),
-      ),
-      h(
-        'dl',
-        { className: css.facts },
-        h('dt', null, t('providerProtocol')),
-        h('dd', null, status(t, config, health)),
-        h('dt', null, t('providerAuth')),
-        h(
-          'dd',
+          'div',
           null,
-          t(
-            config.authentication === 'chatgpt-managed'
-              ? 'managedAuthTitle'
-              : probe?.status === 'error' && probe.failureKind === 'auth_required'
-                ? 'providerAuthRequired'
-                : 'providerAuthUnknown',
+          h('h2', null, config.name),
+          h(
+            'p',
+            {
+              className: css.state,
+              'data-ready': config.enabled !== false && probe?.status === 'ok' && !needsAuthorization,
+              'data-failed': config.enabled !== false && (probe?.status === 'error' || checkError !== undefined),
+            },
+            checkError !== undefined && config.enabled !== false
+              ? t('providerProtocolError')
+              : status(t, config, health),
           ),
         ),
-        h('dt', null, t('providerVersion')),
+      ),
+      h(ProviderMenu, {
+        label: t('providerInstanceActions'),
+        items: [
+          {
+            id: 'check',
+            label: t('providerCheck'),
+            disabled: checking || refreshUnavailable !== undefined,
+            icon: h(IconRefreshOutlineMedium, { size: 16 }),
+          },
+          { id: 'settings', label: t('providerAdvanced'), icon: h(IconSettingsOutlineMedium, { size: 16 }) },
+          { id: 'removed', label: t('providerRemovedModels') },
+          { type: 'separator', id: 'instance-management' },
+          {
+            id: 'toggle',
+            label: t(config.enabled === false ? 'providerEnableAction' : 'providerDisableAction'),
+            disabled: disabled || dirty,
+          },
+          {
+            id: 'delete',
+            label: t('providerDelete'),
+            disabled,
+            danger: true,
+            icon: h(IconTrashOutlineMedium, { size: 16 }),
+          },
+        ],
+        onSelect: onAction,
+      }),
+    ),
+    needsAuthorization ? h(ManagedChatGptCard, { id, config, panel, t, readOnly }) : null,
+    h(ProviderModels, {
+      id,
+      name: config.name,
+      t,
+      panel,
+      catalog: config.enabled === false || needsAuthorization ? undefined : health?.modelCatalog,
+      hiddenIds: config.hiddenModelIds ?? [],
+      checking,
+      checked: probe?.status === 'ok',
+      failed: checkError !== undefined || probe?.status === 'error',
+      unavailable: refreshUnavailable,
+      readOnly: disabled,
+      showHidden,
+      onCloseHidden: () => setShowHidden(false),
+    }),
+    h(
+      'details',
+      { className: css.disclosure, ref: connection },
+      h('summary', null, t('providerConnectionDetails'), h(IconChevronRightOutlineMedium, { size: 14 })),
+      h(
+        'div',
+        { className: css.disclosureBody },
         h(
-          'dd',
-          null,
-          probe?.status === 'ok'
-            ? (probe.agentInfo?.version ?? health?.version ?? t('providerVersionUnknown'))
-            : t('providerVersionUnknown'),
+          'dl',
+          { className: css.facts },
+          h('dt', null, t('providerAuth')),
+          h(
+            'dd',
+            null,
+            t(
+              managed
+                ? 'managedAuthTitle'
+                : probe?.status === 'error' && probe.failureKind === 'auth_required'
+                  ? 'providerAuthRequired'
+                  : 'providerAuthUnknown',
+            ),
+          ),
+          h('dt', null, t('providerVersion')),
+          h(
+            'dd',
+            null,
+            (probe?.status === 'ok' ? probe.agentInfo?.version : undefined) ??
+              health?.version ??
+              t('providerVersionUnknown'),
+          ),
+          h('dt', null, t('providerLastChecked')),
+          h('dd', null, probe?.at == null ? t('providerNotChecked') : new Date(probe.at).toLocaleString()),
+        ),
+        loginHint && probe?.status === 'error' && probe.failureKind === 'auth_required'
+          ? h('p', { className: css.hint }, t('providerLoginCommand', { hint: loginHint }))
+          : null,
+        checkError !== undefined || probe?.status === 'error'
+          ? h(
+              'p',
+              { className: css.error, role: 'status' },
+              localizedDiagnostic(
+                t,
+                checkError
+                  ? 'healthCheckTransportFailed'
+                  : probe?.status === 'error' && probe.failureKind === 'spawn-failure'
+                    ? 'probeNotInstalled'
+                    : probe?.status === 'error' && probe.failureKind === 'auth_required'
+                      ? 'probeAuthRequired'
+                      : 'probeProtocolError',
+                checkError ?? (probe?.status === 'error' ? probe.message : undefined),
+                { command: config.command },
+              ),
+            )
+          : null,
+        managed && !needsAuthorization ? h(ManagedChatGptCard, { id, config, panel, t, readOnly }) : null,
+      ),
+    ),
+    h(
+      'details',
+      { className: css.disclosure, ref: advanced },
+      h('summary', null, t('providerAdvanced'), h(IconChevronRightOutlineMedium, { size: 14 })),
+      h(
+        'div',
+        { className: css.disclosureBody },
+        h(Field, {
+          label: t('fieldName'),
+          value: draft.name,
+          disabled,
+          error: error(validation.name),
+          onChange: (name: string) => edit({ name }),
+        }),
+        h(Field, {
+          label: t('fieldId'),
+          value: id,
+          disabled: true,
+          hint: t('providerIdHelp'),
+          onChange: () => undefined,
+        }),
+        h(RuntimeFields, { t, draft, edit, disabled, open: false }),
+        h(EnvironmentFields, { t, draft, edit, disabled }),
+        validation.env ? h('p', { className: css.error, role: 'alert' }, error(validation.env)) : null,
+        h(
+          'footer',
+          { className: css.actions },
+          h('span', { className: css.hint, role: 'status' }, saved ? t('providerSaved') : ''),
+          h(
+            Button,
+            {
+              variant: 'primary',
+              disabled: disabled || !dirty || validation.config === undefined,
+              onClick: () => void save(),
+            },
+            t(busy ? 'saving' : 'save'),
+          ),
         ),
       ),
-      h(
-        'p',
-        { className: css.hint },
-        probe?.at ? t('providerCheckedAt', { time: new Date(probe.at).toLocaleString() }) : t('providerNotChecked'),
-      ),
-      dirty || config.authentication !== 'chatgpt-managed'
-        ? h('p', { className: css.hint }, t(dirty ? 'providerDirtyCheck' : 'providerAuthHelp'))
-        : null,
-      loginHint ? h('p', { className: css.hint }, t('providerLoginCommand', { hint: loginHint })) : null,
-      checkError !== undefined || probe?.status === 'error'
-        ? h(
-            'p',
-            { className: css.error, role: 'status' },
-            localizedDiagnostic(
-              t,
-              checkError
-                ? 'healthCheckTransportFailed'
-                : probe?.status === 'error' && probe.failureKind === 'spawn-failure'
-                  ? 'probeNotInstalled'
-                  : probe?.status === 'error' && probe.failureKind === 'auth_required'
-                    ? 'probeAuthRequired'
-                    : 'probeProtocolError',
-              checkError ?? (probe?.status === 'error' ? probe.message : undefined),
-              { command: config.command },
-            ),
-          )
-        : null,
     ),
-    config.authentication === 'chatgpt-managed' ? h(ManagedChatGptCard, { id, config, panel, t, readOnly }) : null,
-    h(
-      'section',
-      { className: css.group },
-      h(Field, {
-        label: t('fieldName'),
-        value: draft.name,
-        disabled,
-        error: error(validation.name),
-        onChange: (name: string) => edit({ name }),
-      }),
-      h(Field, {
-        label: t('fieldId'),
-        value: id,
-        disabled: true,
-        hint: t('providerIdHelp'),
-        onChange: () => undefined,
-      }),
-    ),
-    h(RuntimeFields, { t, draft, edit, disabled, open: false }),
-    h(EnvironmentFields, { t, draft, edit, disabled }),
-    validation.env ? h('p', { className: css.error, role: 'alert' }, error(validation.env)) : null,
-    h(
-      'section',
-      { className: css.group },
-      h('h3', null, t('providerModels')),
-      h(
-        'p',
-        null,
-        probe?.status === 'ok' ? t('providerModelCount', { count: probe.modelCount }) : t('providerModelsUnknown'),
-      ),
-      h('p', { className: css.hint }, t('providerModelsHelp')),
-    ),
-    failure ? h('p', { className: css.error, role: 'alert' }, failure) : null,
-    h(
-      'footer',
-      { className: css.actions },
-      h(Button, { variant: 'ghost', disabled, onClick: () => setConfirming(true) }, t('providerDelete')),
-      h('span', { className: css.hint, role: 'status' }, saved ? t('providerSaved') : ''),
-      h(
-        Button,
-        {
-          variant: 'primary',
-          disabled: disabled || !dirty || validation.config === undefined,
-          onClick: () => void save(),
-        },
-        t(busy ? 'saving' : 'save'),
-      ),
-    ),
+    failure && !confirming ? h('p', { className: css.error, role: 'alert' }, failure) : null,
     confirming
       ? h(
-          'section',
-          { className: css.confirm, 'aria-label': t('providerDeleteTitle') },
-          h('h3', null, t('providerDeleteTitle')),
-          h('p', null, t('providerDeleteHelp')),
+          Modal,
+          {
+            open: true,
+            title: t('providerDeleteTitle'),
+            description: t('providerDeleteHelp'),
+            closeLabel: t('providerClose'),
+            backdropBlur: false,
+            onClose: () => {
+              if (!busy) setConfirming(false)
+            },
+            footer: h(
+              'div',
+              { className: css.dialogActions },
+              h(
+                Button,
+                {
+                  variant: 'outline',
+                  disabled: busy,
+                  ...{ 'data-modal-autofocus': '' },
+                  onClick: () => setConfirming(false),
+                },
+                t('cancel'),
+              ),
+              h(
+                Button,
+                { variant: 'primary', className: css.danger, disabled: busy, onClick: () => void remove() },
+                t('providerDelete'),
+              ),
+            ),
+          },
           count !== undefined ? h('p', null, t('removeConfirmBound', { count })) : null,
-          h(
-            'div',
-            { className: css.actions },
-            h(Button, { variant: 'outline', disabled: busy, onClick: () => setConfirming(false) }, t('cancel')),
-            h(Button, { variant: 'primary', disabled: busy, onClick: () => void remove() }, t('providerDelete')),
-          ),
+          failure ? h('p', { className: css.error, role: 'alert' }, failure) : null,
         )
       : null,
   )

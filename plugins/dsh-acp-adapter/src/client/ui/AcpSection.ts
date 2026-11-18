@@ -63,6 +63,7 @@ export interface AcpSectionWire {
   refreshAgentHealth(agentId: string): void
   saveAgent(editingId: string | undefined, draft: AgentDraft): Promise<string | undefined>
   deleteAgent(id: string): Promise<string | undefined>
+  setModelHidden(id: string, modelId: string, hidden: boolean): Promise<string | undefined>
   notifyOutcome?(outcome: 'saved' | 'save-failed' | 'deleted' | 'delete-failed'): void
   setToolApprovalDefault(policy: 'auto' | 'ask'): Promise<string | undefined>
   /**

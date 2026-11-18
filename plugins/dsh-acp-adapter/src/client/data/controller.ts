@@ -23,7 +23,8 @@ import {
   panelSettingsOf,
   validateAgentDraft,
 } from './logic.ts'
-import type { AcpProviderHealth, AcpScopeSnapshot, AgentDraft } from './logic.ts'
+import type { AcpAgentConfig, AcpProviderHealth, AcpScopeSnapshot, AgentDraft } from './logic.ts'
+import { acpProbeConfigKey } from '../../domain/session/agent-config.ts'
 import type { AcpRemoteLike } from './acp-remote.ts'
 import type { AcpPanelSnapshot, AcpPanelStoreActions, HealthState } from './stores/panel-store.ts'
 
@@ -68,8 +69,18 @@ export class AcpPanelController {
     this.refusedMessage = deps.refusedMessage
     this.remote = deps.remote
     this.unsubscribeScope = deps.scope.subscribe(() => {
+      const previous = this.scopeSnapshot.value?.agents
       this.scopeSnapshot = deps.scope.getSnapshot()
-      this.sink?.settingsMirrored(panelSettingsOf(this.scopeSnapshot))
+      const current = this.scopeSnapshot.value?.agents
+      const rows = this.health.rows.filter(({ id }) => sameProbeConfig(previous?.[id], current?.[id]))
+      const errors = Object.entries(this.health.agentErrors)
+      const keptErrors = errors.filter(([id]) => sameProbeConfig(previous?.[id], current?.[id]))
+      if (rows.length !== this.health.rows.length || keptErrors.length !== errors.length) {
+        this.health = { ...this.health, rows, agentErrors: Object.fromEntries(keptErrors) }
+        this.sink?.resync(this.project())
+      } else {
+        this.sink?.settingsMirrored(panelSettingsOf(this.scopeSnapshot))
+      }
     })
   }
 
@@ -100,6 +111,7 @@ export class AcpPanelController {
    */
   async refreshHealth(recheck = false): Promise<void> {
     if (this.health.status === 'loading' || this.health.checkingAgentIds.length > 0) return
+    const requested = this.scopeSnapshot.value?.agents
     this.health = {
       ...this.health,
       status: 'loading',
@@ -114,11 +126,13 @@ export class AcpPanelController {
         this.failHealth(result.error.message)
         return
       }
-      const rows = decodeHealthResponse(result.value)
-      if (rows === undefined) {
+      const decoded = decodeHealthResponse(result.value)
+      if (decoded === undefined) {
         this.failHealth('malformed dshAcp/health payload')
         return
       }
+      const current = this.scopeSnapshot.value?.agents
+      const rows = requested === undefined ? decoded : decoded.filter(({ id }) => sameProbeConfig(requested[id], current?.[id]))
       const fetchedAt = Date.now()
       this.health = {
         status: 'ready',
@@ -142,6 +156,7 @@ export class AcpPanelController {
    */
   async refreshAgentHealth(agentId: string): Promise<void> {
     if (this.health.status === 'loading' || this.health.checkingAgentIds.includes(agentId)) return
+    const requested = this.scopeSnapshot.value?.agents[agentId]
     this.health = {
       ...this.health,
       checkingAgentIds: [...this.health.checkingAgentIds, agentId].sort(),
@@ -150,6 +165,14 @@ export class AcpPanelController {
     this.sink?.agentHealthLoading(agentId)
     try {
       const result = await this.remote.health({ recheck: true, agentId })
+      if (!sameProbeConfig(requested, this.scopeSnapshot.value?.agents[agentId])) {
+        this.health = {
+          ...this.health,
+          checkingAgentIds: this.health.checkingAgentIds.filter((id) => id !== agentId),
+        }
+        this.sink?.resync(this.project())
+        return
+      }
       if (!result.ok) {
         this.failAgentHealth(agentId, result.error.message)
         return
@@ -195,13 +218,19 @@ export class AcpPanelController {
       )
     }
     const id = draft.id.trim()
+    const hiddenModelIds = editingId === undefined ? undefined : agents[editingId]?.hiddenModelIds
+    const value = {
+      ...validation.config,
+      args: [...validation.config.args],
+      ...(hiddenModelIds === undefined ? {} : { hiddenModelIds: [...hiddenModelIds] }),
+    }
     const ops: AcpSettingsOp[] =
       editingId !== undefined && editingId !== id
         ? [
             { op: 'unset', path: ['agents', editingId] },
-            { op: 'set', path: ['agents', id], value: { ...validation.config, args: [...validation.config.args] } },
+            { op: 'set', path: ['agents', id], value },
           ]
-        : [{ op: 'set', path: ['agents', id], value: { ...validation.config, args: [...validation.config.args] } }]
+        : [{ op: 'set', path: ['agents', id], value }]
     return this.mutate(ops)
   }
 
@@ -213,6 +242,16 @@ export class AcpPanelController {
    */
   async deleteAgent(id: string): Promise<string | undefined> {
     return this.mutate([{ op: 'unset', path: ['agents', id] }])
+  }
+
+  async setModelHidden(id: string, modelId: string, hidden: boolean): Promise<string | undefined> {
+    const config = this.scopeSnapshot.value?.agents[id]
+    if (config === undefined || modelId.length === 0) return this.refusedMessage()
+    const ids = config.hiddenModelIds ?? []
+    if (ids.includes(modelId) === hidden) return undefined
+    const next = hidden ? [...ids, modelId] : ids.filter((value) => value !== modelId)
+    const path = ['agents', id, 'hiddenModelIds']
+    return this.mutate(next.length === 0 ? [{ op: 'unset', path }] : [{ op: 'set', path, value: next }])
   }
 
   /** 授权回调只更新非秘密账号绑定，不覆盖同时编辑的显示名或环境。 */
@@ -270,6 +309,11 @@ export class AcpPanelController {
   private project(): AcpPanelSnapshot {
     return { settings: panelSettingsOf(this.scopeSnapshot), health: this.health }
   }
+}
+
+function sameProbeConfig(before: AcpAgentConfig | undefined, after: AcpAgentConfig | undefined): boolean {
+  if (before === undefined || after === undefined) return before === after
+  return (before.enabled !== false) === (after.enabled !== false) && acpProbeConfigKey(before) === acpProbeConfigKey(after)
 }
 
 function withoutKey(values: Record<string, string>, key: string): Record<string, string> {

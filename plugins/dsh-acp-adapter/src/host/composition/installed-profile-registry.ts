@@ -682,10 +682,13 @@ export async function installInstalledProfileRegistry(
       .map(([id, config]) => [id, profileLaunchIdentityHash(id, config), config.enabled !== false])
     const key = JSON.stringify({ facts, identities })
     if (key === registeredKey) {
-      // Registration facts intentionally ignore runtime settings such as env
-      // and args. Still publish the new active snapshot so the route adapter
-      // sees the next immutable generation on its next call.
+      const previousActive = activeAgents
       activeAgents = { ...agents }
+      for (const [id, config] of Object.entries(agents)) {
+        if (JSON.stringify(previousActive[id]?.hiddenModelIds ?? []) !== JSON.stringify(config.hiddenModelIds ?? [])) {
+          registrations.get(id)?.replace([acpRouteId(id)])
+        }
+      }
       return
     }
     const previousActive = activeAgents

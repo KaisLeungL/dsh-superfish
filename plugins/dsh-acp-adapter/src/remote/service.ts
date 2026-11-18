@@ -72,6 +72,7 @@ import type {
   AcpRecoveryFrame,
   AcpHealthView,
   AcpHealthRequest,
+  AcpModelCatalogView,
   AcpLiveSessionContinuity,
   AcpProbeCleanupView,
   AcpProviderHealth,
@@ -198,6 +199,7 @@ function healthyRecoveryView(sessionId: string): AcpRecoveryView {
  */
 export interface AcpProbeCacheLike {
   probeSnapshot(routeId: string): AcpProbeSnapshotLike | undefined
+  modelCatalogSnapshot?(routeId: string): (AcpModelCatalogView & { readonly key: string }) | undefined
   invalidateProbe(routeId: string): void
   /** 触发一次重探（结果落缓存）；reject = 探测失败（失败条目已落缓存）。 */
   listModels(routeId: string): Promise<unknown>
@@ -1054,18 +1056,21 @@ export class AcpRemoteService extends TypertRemoteService {
             state: deriveAcpAgentState({ hostCompatible, configValid: true, probe: undefined }),
           }
         }
-        if (config.enabled !== false && recheck && (targetAgentId === undefined || targetAgentId === id)) {
-          // 「重新检查」强制丢弃 probe cache 并重探（条文的接线路径）；重探
-          // 失败不抛出——失败条目落缓存，下方照常按新鲜度产出 unavailable 行。
-          const routeId = acpRouteId(id)
+        const routeId = acpRouteId(id)
+        if (config.enabled !== false && recheck) {
+          // 强制重探并保留同配置的最近成功目录；本次失败由 probe 单独报告。
           probeCache.invalidateProbe(routeId)
           await probeCache.listModels(routeId).catch(() => undefined)
         }
-        const snapshot = probeCache.probeSnapshot(acpRouteId(id))
+        const snapshot = probeCache.probeSnapshot(routeId)
         // Health is a last-explicit-check view, not the model catalogue's
         // runtime cache. Keep a result while it still belongs to the exact
         // saved configuration; configuration edits invalidate it by key.
-        const matchingSnapshot = snapshot?.key === acpProbeConfigKey(config) ? snapshot : undefined
+        const key = acpProbeConfigKey(config)
+        const matchingSnapshot = snapshot?.key === key ? snapshot : undefined
+        const catalog = config.enabled === false ? undefined : probeCache.modelCatalogSnapshot?.(routeId)
+        const modelCatalog =
+          catalog?.key === key ? { at: catalog.at, models: catalog.models.map(({ id, name }) => ({ id, name })) } : undefined
         // Opening Settings is a read-only cache view: resolving PATH is
         // side-effect free, while `--version` is a subprocess and therefore
         // belongs exclusively to an explicit recheck. Never make a panel
@@ -1092,6 +1097,7 @@ export class AcpRemoteService extends TypertRemoteService {
           loginHint: config.loginHint ?? null,
           executable,
           version,
+          ...(modelCatalog === undefined ? {} : { modelCatalog }),
           probe: probeRow(matchingSnapshot, referenceVersion, this.resolved.imageInputAvailable),
           // registry 的 agents map 经 settings schema 校验（非法值根本写不进来），configValid 恒 true
           state: deriveAcpAgentState({

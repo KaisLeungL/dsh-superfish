@@ -28,27 +28,7 @@
       config:
         id: workspace-superagent-router
         name: 大肥鱼
-        description: 默认关闭输入与工具，等待当前受信安装。
+        description: 对话、盘点待办、定时总结和委派任务。后台执行按任务授权运行。
         plugins:
           - id: workspace-superagent-router-outer
-            name: '@local/dsh-superfish/preset'
-    - id: preset-workspace-superagent-scheduled
-      name: '@deepseek-ai/dsh-agent-preset'
-      config:
-        id: workspace-superagent-scheduled
-        name: 大肥鱼定时会话
-        description: 接收已确认的定时指令，仅授予工作区只读工具权限用于盘点待办、看板与会话总结。
-        plugins:
-          - id: workspace-superagent-schedule-only
-            name: '@local/dsh-superfish/preset'
-            config:
-              scheduleOnly: true
-    - id: preset-workspace-superagent-worker
-      name: '@deepseek-ai/dsh-agent-preset'
-      config:
-        id: workspace-superagent-worker
-        name: 大肥鱼执行 Worker
-        description: 按看板卡片授权（read-only 或已确认的 workspace-write 沙盒）执行当前任务，不越权创建或扩大权限。
-        plugins:
-          - id: workspace-superagent-worker-outer
             name: '@local/dsh-superfish/preset'

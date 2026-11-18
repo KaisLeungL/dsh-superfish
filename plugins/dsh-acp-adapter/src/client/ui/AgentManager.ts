@@ -68,7 +68,7 @@ export function createAgentManager(
       h(
         'header',
         { className: css.header },
-        h('div', null, h('h2', null, t('managerCopy5')), h('p', null, t('managerCopy6'))),
+        h('div', null, h('h2', null, t('managerCopy5'))),
         tab === 'overview'
           ? h(
               'label',

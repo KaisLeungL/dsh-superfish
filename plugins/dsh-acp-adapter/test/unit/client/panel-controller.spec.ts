@@ -119,4 +119,52 @@ describe('AcpPanelController targeted health checks', () => {
     expect(store.getSnapshot().health.agentErrors).toEqual({ devin: 'devin probe failed' })
     controller.dispose()
   })
+
+  it('drops the old directory and ignores a late check after the launch configuration changes', async () => {
+    const pending = deferred<{ ok: true; value: AcpHealthView }>()
+    const verified = {
+      ...row('codex', 'old'),
+      modelCatalog: { at: 1, models: [{ id: 'old-model', name: 'Old Model' }] },
+    }
+    let snapshot = {
+      status: 'ready' as const,
+      writable: true,
+      revision: 1,
+      value: { agents: { codex: { name: 'Codex', command: 'codex-acp', args: [], env: { CODEX_HOME: '/first' } } } },
+    }
+    let mirror = () => {}
+    const controller = new AcpPanelController({
+      scope: {
+        getSnapshot: () => snapshot,
+        subscribe(listener) {
+          mirror = listener
+          return () => {}
+        },
+      },
+      mutate: vi.fn(),
+      refusedMessage: () => 'refused',
+      remote: {
+        health: vi.fn((request?: { agentId?: string }) =>
+          request?.agentId === 'codex' ? pending.promise : Promise.resolve({ ok: true, value: view([verified]) }),
+        ),
+      } as never,
+    })
+    const store = createAcpPanelStore().create()
+    controller.attach(store.actions)
+    await controller.refreshHealth()
+    expect(store.getSnapshot().health.rows[0]?.modelCatalog).toEqual(verified.modelCatalog)
+    const checking = controller.refreshAgentHealth('codex')
+    snapshot = {
+      ...snapshot,
+      revision: 2,
+      value: { agents: { codex: { ...snapshot.value.agents.codex, env: { CODEX_HOME: '/second' } } } },
+    }
+    mirror()
+    expect(store.getSnapshot().health.rows).toEqual([])
+    pending.resolve({ ok: true, value: view([verified]) })
+    await checking
+    expect(store.getSnapshot().health.rows).toEqual([])
+    expect(store.getSnapshot().health.checkingAgentIds).toEqual([])
+    controller.dispose()
+  })
 })

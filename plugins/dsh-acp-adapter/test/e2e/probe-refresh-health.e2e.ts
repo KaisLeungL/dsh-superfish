@@ -9,6 +9,7 @@ import type { TestBrowser } from './browser.ts'
 import { launchAdapterWorld, root } from './scaffold.ts'
 import { openAcpPluginDetail, returnToConversation } from './plugin-panel.helpers.ts'
 import { required } from './required.ts'
+import { openAgentProvider } from './agent-manager.helpers.ts'
 
 it('keeps a verified catalog and live session usable while reporting failed refresh and login recovery', async () => {
   const host = await launchAdapterWorld()
@@ -36,7 +37,10 @@ it('keeps a verified catalog and live session usable while reporting failed refr
     })
     await vi.waitFor(() => expect(host.ctx.llm.listProviders().some((entry) => entry.id === provider)).toBe(true))
     await host.ctx.agentDefaultModel.saveSelection({ provider, model: 'probe-model' })
-    browser = await launchBrowser({ headless: true })
+    browser = await launchBrowser({
+      headless: true,
+      ...(process.env.DSH_E2E_BROWSER_CHANNEL ? { channel: process.env.DSH_E2E_BROWSER_CHANNEL } : {}),
+    })
     const page = await newEnglishPage(browser)
     page.on('pageerror', (error) => errors.push(error.message))
     await page.context().tracing.start({ screenshots: true, snapshots: true })
@@ -79,6 +83,29 @@ it('keeps a verified catalog and live session usable while reporting failed refr
     // so a failing baseline still contains real UI and subprocess evidence.
     await returnToConversation(page, sessionId)
     const continuedSessionId = await send('E2E_PROBE_CONTINUED')
+    const openManagement = async () => {
+      await openAgentProvider(page)
+      const manager = page.locator('[data-agent-manager]')
+      await manager.getByRole('button', { name: 'Connections', exact: true }).click()
+      return manager.locator(`[data-provider-detail="${profile}"]`)
+    }
+    const failedManagement = await openManagement()
+    await failedManagement.getByRole('button', { name: 'Refresh models', exact: true }).click()
+    await expect
+      .poll(async () => {
+        const row = (await remote.health()).providers.find((entry) => entry.id === profile)
+        return row?.probe.status === 'error' && row.probe.at > attemptFinished
+      })
+      .toBe(true)
+    await failedManagement.getByText('Could not refresh models. Showing the last successful list.').waitFor()
+    await failedManagement.locator('[data-provider-model="probe-model"]').waitFor()
+    expect((await remote.health()).providers.find((entry) => entry.id === profile)?.modelCatalog).toEqual(
+      initial.modelCatalog,
+    )
+    await page.screenshot({ path: join(evidence, 'provider-model-refresh-failed.png') })
+    await page.keyboard.press('Escape')
+    await page.getByRole('dialog', { name: 'Settings', exact: true }).waitFor({ state: 'hidden' })
+    await returnToConversation(page, sessionId)
     const recoveryStarted = Date.now()
     writeFileSync(authFile, 'authenticated')
     const recoveryDetail = await openAcpPluginDetail(page)
@@ -96,6 +123,15 @@ it('keeps a verified catalog and live session usable while reporting failed refr
     const recoveredText = await recoveryRow.innerText()
     await returnToConversation(page, sessionId)
     const recoveredSessionId = await send('E2E_PROBE_RECOVERED')
+    writeFileSync(authFile, 'authenticated-expanded')
+    const refreshedManagement = await openManagement()
+    await refreshedManagement.getByRole('button', { name: 'Refresh models', exact: true }).click()
+    await refreshedManagement.locator('[data-provider-model="new-probe-model"]').waitFor()
+    expect((await host.ctx.llm.listModels(provider)).map((model) => model.id)).toEqual([
+      'probe-model',
+      'new-probe-model',
+    ])
+    await page.screenshot({ path: join(evidence, 'provider-model-refresh-succeeded.png') })
     const protocolText = readFileSync(logFile, 'utf8')
     const protocol = protocolText
       .trim()

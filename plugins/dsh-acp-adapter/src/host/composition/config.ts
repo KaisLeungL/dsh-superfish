@@ -63,6 +63,13 @@ function agentConfigOf(id: string, raw: unknown): AcpAgentConfig {
   if (enabled !== undefined && typeof enabled !== 'boolean') {
     throw new TypeError(`dsh-acp settings: agents.${id}.enabled must be a boolean`)
   }
+  const hiddenModelIds = raw['hiddenModelIds']
+  if (
+    hiddenModelIds !== undefined &&
+    (!Array.isArray(hiddenModelIds) || !hiddenModelIds.every((model) => typeof model === 'string' && model.length > 0))
+  ) {
+    throw new TypeError(`dsh-acp settings: agents.${id}.hiddenModelIds must be an array of non-empty strings`)
+  }
   const loginHint = raw['loginHint']
   if (loginHint !== undefined && typeof loginHint !== 'string') {
     throw new TypeError(`dsh-acp settings: agents.${id}.loginHint must be a string`)
@@ -87,6 +94,7 @@ function agentConfigOf(id: string, raw: unknown): AcpAgentConfig {
     ...(authentication === undefined ? {} : { authentication }),
     ...(authBinding === undefined ? {} : { authBinding }),
     ...(enabled === undefined ? {} : { enabled }),
+    ...(hiddenModelIds === undefined ? {} : { hiddenModelIds: [...new Set(hiddenModelIds as string[])] }),
     name,
     command,
     args: [...args] as string[],
@@ -124,6 +132,8 @@ const AgentSchema = z.object({
   authentication: z.union(['chatgpt-managed']),
   authBinding: z.string(),
   enabled: z.boolean(),
+  // A bare array schema would materialize [] in profiles that predate this setting.
+  hiddenModelIds: z.union([z.array(z.string())]),
   name: z.string().required(),
   command: z.string().required(),
   args: z.array(z.string()).default([]),

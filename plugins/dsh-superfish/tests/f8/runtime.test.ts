@@ -11,7 +11,7 @@ import { StableSessionOwner } from '../../src/sessions/origin.js';
 import { createRuntime, type NativeAgent, type RuntimeContext } from '../../src/sessions/runtime.js';
 
 // 公开接缝等价适配；不宣称这些对象是原生 SDK、Host 或 browser。
-function fixture(t: TestContext, autoCleanup = true) {
+function fixture(t: TestContext, autoCleanup = true, todoWrites = false) {
   const dir = process.env.F84_TEST_ROOT!;
   assert.ok(dir?.includes('/.superagent-product-lab/b04-f8-product/')); mkdirSync(dir, { recursive: true });
   const store = StewardStore.initializeFresh(resolve(dir, randomUUID() + '.sqlite'), { instanceId: randomUUID(), domainId: 'f84-runtime-adapter' });
@@ -20,11 +20,14 @@ function fixture(t: TestContext, autoCleanup = true) {
   const registry = new Map<string, NativeAgent>(), sessions = new Map<string, NativeAgent['session']>();
   const calls = { create: 0, dispose: 0, mount: 0, attach: 0, pin: 0 };
   const hooks = new Map<string, ((...args: unknown[]) => unknown)[]>();
+  const guards: ((exec: { name: string; agent: NativeAgent; signal: AbortSignal }) => unknown)[] = [];
   const noop = () => {}; let policyRevision = 'one', policyMaxTokens = 10, policyRead: () => void = noop; let restrictCleanup: () => void | Promise<void> = noop, guardCleanup: () => void | Promise<void> = noop; let globalReleased = 0;
   const ctx = {
     get: (name: string) => services[name], provide: (name: string, value: unknown) => { services[name] = value; },
     on(name: string, callback: (...args: unknown[]) => unknown) { const list = hooks.get(name) ?? []; hooks.set(name, list); list.push(callback); return () => { if (name === 'session/event') globalReleased++; }; },
-    effect() {}, tools: { register: () => noop, restrict: () => () => restrictCleanup(), guard: () => () => guardCleanup() }, systemPrompt: { section: () => noop },
+    effect() {}, tools: { register: () => noop, restrict: () => () => restrictCleanup(), guard(fn: typeof guards[number]) {
+      guards.push(fn); return () => guardCleanup();
+    } }, systemPrompt: { section: () => noop },
   } as unknown as RuntimeContext;
   let selected: () => Promise<void> = async () => {}, maintenance: () => void = noop, agent: NativeAgent | undefined;
   const workspace = { id: 'W', path: process.cwd(), sessionIds: [] as string[], async attachSession(id: string) { calls.attach++; workspace.sessionIds.push(id); } };
@@ -62,17 +65,33 @@ function fixture(t: TestContext, autoCleanup = true) {
   };
   const owner = new StableSessionOwner(ctx);
   const runtime = createRuntime(ctx, store, { identity: store.identity, workspaceId: 'W', model: { provider: 'fixture', model: 'fixture' },
-    currentPolicy: () => { policyRead(); return { revision: policyRevision, backend: 'native', resources: ['board'], tools: ['steward_list_tasks', 'steward_list_todos', 'steward_list_sessions'], actions: ['read'], audiences: [], maxTokens: policyMaxTokens }; },
+    ...(todoWrites ? { todoWrites: { listTodos: () => [], createTodo: async () => [], updateTodo: async () => [] } } : {}),
+    currentPolicy: () => { policyRead(); return { revision: policyRevision, backend: 'native', resources: ['board'], tools: ['steward_list_tasks', 'steward_list_todos', 'steward_list_sessions', 'steward_external_fetch'], actions: ['read'], audiences: [], maxTokens: policyMaxTokens }; },
     defaultPermission: () => 'read-only', auditReplay: { id: 'installation-only-fixture', validate() { throw Error('UNEXPECTED_AUDIT_READ'); }, describe() { throw Error('UNEXPECTED_AUDIT_READ'); } } }, owner);
   if (autoCleanup) t.after(async () => { await runtime.dispose(); await owner.dispose(); store.close(); });
   const operation = () => new InstallationOperation(store, new AbortController().signal, noop);
-  return { store, calls, runtime, owner, operation, persistence, hooks, services, agent: () => agent!,
+  return { store, calls, runtime, owner, operation, persistence, hooks, guards, services, agent: () => agent!,
     policyRevision: (revision: string) => { policyRevision = revision; }, policyMaxTokens: (maxTokens: number) => { policyMaxTokens = maxTokens; }, policyRead: (callback: () => void) => { policyRead = callback; },
     restrictCleanup: (cleanup: () => void | Promise<void>) => { restrictCleanup = cleanup; }, guardCleanup: (cleanup: () => void | Promise<void>) => { guardCleanup = cleanup; }, globalReleased: () => globalReleased,
     replaceWorkspace: () => { currentWorkspace = { ...workspace }; },
     maintenance: (callback: () => void) => { maintenance = callback; },
     select: (callback: () => Promise<void>) => { selected = callback; } };
 }
+test('后台 Worker 回传结束后清理输入，后续定时投递可重新准入', async t => {
+  const f = fixture(t), op = f.operation(), staged = await f.runtime.manager.ensure(op);
+  op.preflight(staged); op.commit(staged);
+  const agent = f.agent(), signal = new AbortController().signal;
+  Object.assign(agent.session, { deriveMessages: () => [] });
+  Object.assign(f.services.sessionController as object, { async prompt() { return { accepted: true }; } });
+  await f.runtime.submitRouterInput('[WORKER RESULT] 已完成', signal, undefined, 'worker-result:test');
+  assert.equal(f.runtime.authority.capture({ agent, signal }).foreground, false);
+  for (const hook of f.hooks.get('session/event') ?? []) hook(agent.session, { type: 'turn/end', seq: 1, data: { turn: 1 } });
+  const message = { id: 'scheduled-after-worker', source: { kind: 'schedule' },
+    content: [{ type: 'text', text: '[SCHEDULE REMINDER] 每日简报' }] };
+  const [claim] = f.hooks.get('agent/pre-claim')!;
+  const result = claim!({ agent, signal, messages: [message], nextTurn: [message], nextStep: [] }) as { kind: string };
+  assert.equal(result.kind, 'claim');
+});
 test('等价 runtime 安装合法正例经维护、持久头、被动观察与 Pin', async t => {
   const f = fixture(t), op = f.operation(), staged = await f.runtime.manager.ensure(op);
   op.preflight(staged); op.commit(staged);
@@ -283,7 +302,7 @@ test('旧 1000 额度自动升级至新上限，且 maxTokens 仅约束最终可
 });
 
 test('大肥鱼主会话接纳定时任务触发消息（source.kind=schedule）并支持调用只读盘点工具与清理 SCHEDULE CHANGE 通知', async t => {
-  const f = fixture(t);
+  const f = fixture(t, true, true);
   f.policyMaxTokens(16384);
   const op = f.operation(), staged = await f.runtime.manager.ensure(op);
   op.preflight(staged); op.commit(staged);
@@ -345,7 +364,7 @@ test('大肥鱼主会话接纳定时任务触发消息（source.kind=schedule）
   })) as { kind: string; validate: (config: object, phase: object) => boolean };
   assert.equal(stepDecision.kind, 'enter');
 
-  // 定时触发轮次同样享有主理前台输出额度与全部只读工具授权
+  // 定时轮次沿用主会话的输出额度，工具限于盘点和汇报。
   const resolvedReq = await request!({ agent, signal }, async () => ({ ...selection, maxTokens: 1000 })) as { maxTokens: number };
   assert.equal(resolvedReq.maxTokens, 16384);
   const lease = f.runtime.authority.capture({ agent, signal });
@@ -354,4 +373,11 @@ test('大肥鱼主会话接纳定时任务触发消息（source.kind=schedule）
   assert.ok(lease.tools.includes('steward_list_tasks'));
   assert.ok(lease.tools.includes('steward_list_todos'));
   assert.ok(lease.tools.includes('steward_list_sessions'));
+  assert.ok(!lease.tools.includes('steward_external_fetch'));
+  assert.ok(f.guards.length > 0);
+  for (const guard of f.guards) {
+    assert.equal(guard({ agent, signal, name: 'steward_list_tasks' }), undefined);
+    assert.match(String(guard({ agent, signal, name: 'steward_create_todo' })), /拒绝调用/u);
+    assert.match(String(guard({ agent, signal, name: 'steward_delegate_task' })), /拒绝调用/u);
+  }
 });

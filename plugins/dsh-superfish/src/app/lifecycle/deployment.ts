@@ -28,6 +28,8 @@ export interface DeploymentConfig {
   readonly identity: Identity;
   /** 主理专用原生模型；省略时使用主理默认值。 */
   readonly model?: Selection;
+  /** 大肥鱼发起普通交办时使用的 DSH 执行后端。看板任务仍使用卡片的设置。 */
+  readonly execution?: HostAssembly['execution'];
   /** 当前工作区获准调用的额外只读能力及其 Cordis 模块名。 */
   readonly contextSources?: Readonly<Record<string, string>>;
   readonly boardReadScope?: 'workspace' | 'all-projects';
@@ -138,7 +140,7 @@ export async function mountDeployment(ctx: Context, config: DeploymentConfig, in
     };
     const rawTitle = workspace.title || basename(workspacePath);
     const workspaceName = rawTitle === 'default-workspace' ? '默认工作区' : rawTitle;
-    const assembly: HostAssembly = { store, readiness, contextGrants, mottoPath: config.databasePath + '.daily-motto.json', soulPath: config.databasePath + '.soul.json', workspaceName, runtimeConfig: {
+    const assembly: HostAssembly = { store, readiness, contextGrants, execution: config.execution, mottoPath: config.databasePath + '.daily-motto.json', soulPath: config.databasePath + '.soul.json', workspaceName, runtimeConfig: {
       identity: Object.freeze({ ...config.identity }), workspaceId: workspace.id, model,
       currentPolicy() {
         const blocked = readiness();

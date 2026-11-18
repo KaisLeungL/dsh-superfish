@@ -2,7 +2,7 @@
 
 面向 DeepSeek Harness（DSH）的 **Personal Agent（个人长期主理）+ Super Agent（超级执行主理）** 核心插件。
 
-- **当前版本**：`1.0.0`
+- **当前版本**：`1.0.4`
 - **宿主兼容范围**：`dsh >=0.2.2-rc.1 <0.3.0`
 - **版本发布说明**：[RELEASE_NOTES_1.0.0.md](./RELEASE_NOTES_1.0.0.md)
 - **产品与设计规格**：[PRODUCT.md](./PRODUCT.md) · [DESIGN.md](./DESIGN.md)
@@ -17,6 +17,10 @@
 6. **右侧四栏工作台**：集成工作概览、记忆库、技能库、主理配置四栏面板，支持 OpenTiny GenUI 动态卡片渲染。
 7. **输入准入驱动内联（Agent Loop Cap4）**：Cap4 驱动以子路径 `@local/dsh-superfish/input-admission` 随本包发布（源码 `src/input-admission/runtime.js`，构建产物 `lib/input-admission/index.js`），本包的 `cordis.patch.yml` 负责禁用宿主原 `agent-loop` 条目并注册该驱动（`inputAdmissionVersion === 4`）。因此只需安装大肥鱼一个包，插件列表里只有大肥鱼一张卡；驱动未生效时，受管运行会以「输入准入能力4未提供」失败，而不是静默退回旧驱动。驱动为官方 AgentLoop 源码构建，随附 MIT 许可（`LICENSE-input-admission-cap4`）。
 8. **内置 GenUI 生成式界面、上下文总线与定时任务协同**：随包集成 OpenTiny GenUI 中间层宿主与客户端注册中心（`@local/dsh-superfish/genui` / `superagentGenuiClient`）、只读工作区上下文总线（`@local/dsh-superfish/workspace-context` 及看板、定时任务、跨会话适配器）、定时任务宿主生命周期服务（`@local/dsh-superfish/schedule-host`）以及客户端定时任务面板联动定位服务（`scheduleNavigation`），单包安装即可闭环使用。
+
+## 大肥鱼预设
+
+预设列表只注册「大肥鱼」。定时总结在同一主会话使用只读工具，普通交办按大肥鱼插件的 `deployment.execution` 配置开独立会话。可设置 `agentPreset`、`model` 和 `permission`，默认使用 DSH 标准模式、主理的部署模型和带审批的工作区写入权限。已有看板任务由看板按卡片的执行设置和权限运行。
 
 ## 构建、校验与测试
 

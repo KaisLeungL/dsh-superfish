@@ -622,6 +622,7 @@ interface ProfileGeneration {
   readonly probe: {
     listModels(provider: string): Promise<readonly LlmModelInfo[]>
     probeSnapshot?(provider: string): AcpProbeCacheEntry | undefined
+    modelCatalogSnapshot?(provider: string): ReturnType<AcpStubAdapter['modelCatalogSnapshot']>
     invalidateProbe?(provider: string): void
     configOptions?(provider: string): readonly acp.SessionConfigOption[] | undefined
     configOptionsForModel?(provider: string, model: string): readonly acp.SessionConfigOption[] | undefined
@@ -1063,12 +1064,25 @@ export class AcpProfileAdapter extends LlmAdapter {
     if (generation === undefined) return []
     // Preserve provider-local failures for the native catalog's error row.
     // An empty success hides the route and can remain cached after recovery.
-    return await generation.probe.listModels(provider)
+    const models = await generation.probe.listModels(provider)
+    const current = this.readConfig()
+    if (
+      current === undefined ||
+      current.enabled === false ||
+      generation.id !== profileLaunchIdentityHash(this.profileId, current)
+    )
+      return []
+    const hidden = new Set(current.hiddenModelIds)
+    return hidden.size === 0 ? models : models.filter((model) => !hidden.has(model.id))
   }
 
   /** The profile adapter is the single probe cache owner for both ModelPicker and health. */
   probeSnapshot(routeId: string): AcpProbeCacheEntry | undefined {
     return this.currentProbeGeneration()?.probe.probeSnapshot?.(routeId)
+  }
+
+  modelCatalogSnapshot(routeId: string): ReturnType<AcpStubAdapter['modelCatalogSnapshot']> {
+    return this.currentProbeGeneration()?.probe.modelCatalogSnapshot?.(routeId)
   }
 
   invalidateProbe(routeId: string): void {

@@ -6,7 +6,8 @@ import { createInterface } from 'node:readline'
 const stateFile = process.env.MOCK_PROBE_AUTH_FILE
 const logFile = process.env.MOCK_PROBE_LOG_FILE
 if (stateFile === undefined || logFile === undefined) throw new Error('Probe fixture paths are required')
-const authenticated = readFileSync(stateFile, 'utf8').trim() === 'authenticated'
+const state = readFileSync(stateFile, 'utf8').trim()
+const authenticated = state === 'authenticated' || state === 'authenticated-expanded'
 const log = (event: string, detail: Record<string, unknown> = {}) =>
   appendFileSync(logFile, `${JSON.stringify({ pid: process.pid, event, authenticated, ...detail })}\n`)
 const send = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`)
@@ -17,7 +18,10 @@ const configOptions = [
     name: 'Model',
     category: 'model',
     currentValue: 'probe-model',
-    options: [{ value: 'probe-model', name: 'Probe Model' }],
+    options: [
+      { value: 'probe-model', name: 'Probe Model' },
+      ...(state === 'authenticated-expanded' ? [{ value: 'new-probe-model', name: 'New Probe Model' }] : []),
+    ],
   },
 ]
 let ordinal = 0

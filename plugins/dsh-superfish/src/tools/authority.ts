@@ -20,6 +20,9 @@ export const SKILL_WRITE_TOOLS = ['steward_save_custom_skill'] as const;
 export const GOAL_TOOLS = ['steward_list_goals'] as const;
 export const GOAL_WRITE_TOOLS = ['steward_manage_goal'] as const;
 export const CONNECTOR_TOOLS = ['steward_external_fetch'] as const;
+const SCHEDULED_READ_TOOLS = [
+  ...READ_TOOLS, ...CONTEXT_TOOLS, ...SESSION_TOOLS, ...PERSONAL_TOOLS, ...MEMORY_TOOLS,
+];
 export const WORKER_SANDBOX_TOOLS = [
   'steward_worker_read_file',
   'steward_worker_write_file',
@@ -54,6 +57,7 @@ export interface CallerHost<A extends CallerAgent> {
   agent(id: string): A | undefined;
   isRuntimeRoot(agent: A): boolean;
   hasForegroundInput?(agent: A): boolean;
+  hasScheduledInput?(agent: A): boolean;
   isScheduledSession?(agent: A): boolean;
   preset(agent: A): string | undefined;
   workspace(agent: A): string | null;
@@ -96,6 +100,7 @@ export class CallerAuthority<A extends CallerAgent> {
     const source = this.store.readAuthorizationSnapshot();
     const preset = this.host.preset(agent!);
     const foreground = preset === ROUTER_PRESET && this.host.hasForegroundInput?.(agent!) === true;
+    const scheduledInput = foreground && this.host.hasScheduledInput?.(agent!) === true;
     const scheduled = preset === SCHEDULE_PRESET && this.host.isScheduledSession?.(agent!) === true;
     // 受管 Worker 的执行与定时会话在后台或独立会话中异步启动，主理轮次结束后 manager 处于 paused 属正常；它们的授权由准入绑定或定时工作区归属约束。
     deny(!this.store.diagnostics().recoveryPending && this.store.diagnostics().healthy &&
@@ -137,12 +142,14 @@ export class CallerAuthority<A extends CallerAgent> {
       }
       return [Object.freeze({ workspaceId: resource.workspaceId, projectIds: Object.freeze([project]), ...(role === 'worker' ? { taskIds: Object.freeze([task!.id]) } : {}) })];
     }));
-    const roleAllowedActions = role === 'scheduled' || (task && (task.permission ?? this.host.defaultPermission()) === 'read-only')
+    const roleAllowedActions = scheduledInput || role === 'scheduled' || (task && (task.permission ?? this.host.defaultPermission()) === 'read-only')
       ? ['read']
       : source.policy.mandate.actions;
     const actions = intersect(source.policy.mandate.actions, hostPolicy.actions, roleAllowedActions);
     const canReadWorkspaceContext = (role === 'router' && foreground) || role === 'scheduled';
-    const eligible = canReadWorkspaceContext
+    const eligible = scheduledInput || role === 'scheduled'
+      ? SCHEDULED_READ_TOOLS
+      : canReadWorkspaceContext
       ? [
           ...READ_TOOLS,
           ...CONTEXT_TOOLS,
@@ -160,7 +167,7 @@ export class CallerAuthority<A extends CallerAgent> {
     const audiences = intersect(source.policy.audiences, hostPolicy.audiences);
     deny(branches.length > 0, 'NO_AUTHORIZED_RESOURCE');
     const allBoardProjects = canReadWorkspaceContext && actions.includes('read') && hostPolicy.allBoardProjects === true;
-    const captured = { identity: { ...this.store.identity }, agentId: agent!.id, role, preset, workspace, foreground, managerRevision: manager.revision,
+    const captured = { identity: { ...this.store.identity }, agentId: agent!.id, role, preset, workspace, foreground, scheduledInput, managerRevision: manager.revision,
       source, hostPolicy: { revision: hostPolicy.revision, backend: hostPolicy.backend, resources: [...hostPolicy.resources], tools: [...hostPolicy.tools], actions: [...hostPolicy.actions], audiences: [...hostPolicy.audiences], maxTokens: hostPolicy.maxTokens },
       task: task ? JSON.parse(JSON.stringify(task)) as NativeTask : undefined, admission: admission ? { taskId: admission.taskId, executionId: admission.executionId, sessionId: admission.sessionId, revision: admission.revision } : undefined, branches, allBoardProjects };
     const binding = fingerprint(captured);

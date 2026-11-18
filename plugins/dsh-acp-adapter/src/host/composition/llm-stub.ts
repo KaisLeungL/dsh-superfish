@@ -172,7 +172,7 @@ export interface AcpProbeCacheEntry {
 type AcpVerifiedModelCatalog = Pick<
   Extract<AcpProbeCacheEntry['result'], { kind: 'ok' }>,
   'models' | 'configOptions' | 'modelConfigOptions'
-> & { readonly key: string }
+> & { readonly key: string; readonly at: number }
 
 /** Extract the `category: 'model'` select options from a probe, flattening grouped options. */
 /** Resolve ACP thought-level metadata into DSH's adapter-owned reasoning shape. */
@@ -408,20 +408,27 @@ export class AcpStubAdapter extends LlmAdapter {
     )
   }
 
-  /** Drop probe outcomes and retained catalogs so an explicit re-check starts fresh. */
+  /** Force the next read to re-probe, retaining verified models if it fails. */
   invalidateProbe(provider?: string): void {
     if (provider === undefined) {
       this.cache.clear()
-      this.lastGoodCatalog.clear()
       return
     }
     this.cache.delete(provider)
-    this.lastGoodCatalog.delete(provider)
   }
 
   /** Last cached probe outcome for the health endpoint; undefined when never probed. */
   probeSnapshot(provider: string): AcpProbeCacheEntry | undefined {
     return this.cache.get(provider)
+  }
+
+  modelCatalogSnapshot(provider: string): AcpVerifiedModelCatalog | undefined {
+    const catalog = this.currentCatalog(provider)
+    return catalog?.configOptions?.some(
+      (option) => option.type === 'select' && normalizeAcpConfigOptionKey(option.category ?? '') === 'model',
+    )
+      ? catalog
+      : undefined
   }
 
   /** Session configuration from the last verified catalog for the current config. */
@@ -541,6 +548,7 @@ export class AcpStubAdapter extends LlmAdapter {
       this.cache.set(provider, entry)
       this.lastGoodCatalog.set(provider, {
         key,
+        at: entry.at,
         models,
         configOptions: entry.result.configOptions,
         ...(entry.result.modelConfigOptions === undefined

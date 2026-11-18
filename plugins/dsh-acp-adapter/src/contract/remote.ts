@@ -143,6 +143,11 @@ export type AcpConfigOption =
 /** probe 失败阶段（四层分层判据；镜像 src/protocol/v1/types.ts `AcpProbePhase`）。 */
 export type AcpProbePhaseView = 'initialize' | 'session'
 
+export interface AcpModelCatalogView {
+  readonly at: number
+  readonly models: readonly { readonly id: string; readonly name: string }[]
+}
+
 /**
  * `health()` 的一行 provider 健康事实。`probe.error.failureKind` 线上是
  * `AcpErrorKind`（src/protocol/v1/types.ts）的字面量成员，wire 面按 string 收窄
@@ -162,6 +167,8 @@ export interface AcpProviderHealth {
   readonly version: string | null
   /** 五态状态（派生规则见 src/domain/session/agent-state.ts）。 */
   readonly state: AcpAgentConfigState
+  /** Last successful directory from the same launch configuration. */
+  readonly modelCatalog?: AcpModelCatalogView
   /**
    * 上次 probe 快照（llm-stub 缓存；首次目录构建前为 'never'）。成功分支携带
    * authMethods（收窄后）、agentInfo/capabilities（initialize 握手实际值）、

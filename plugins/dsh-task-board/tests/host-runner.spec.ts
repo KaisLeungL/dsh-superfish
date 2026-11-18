@@ -88,6 +88,23 @@ function configuredTask(): TaskRecord {
 }
 
 describe('HostExecutionRunner', () => {
+  it.each(['read-only', 'workspace-write'] as const)('keeps %s on cards using the retired Worker preset', async permission => {
+    const commands = { execute: vi.fn(async () => ({ kind: 'success' as const })) }
+    const gateway = {
+      stream: fakeStream(async () => ({ async *[Symbol.asyncIterator]() { yield snapshot([], 0, false) } })),
+      invoke: fakeInvoke(async (request: GatewayRequest) => {
+        if (request.method === 'create') return { sessionId: 'session-a', agentPreset: 'standard' }
+        if (request.method === 'rename') return { title: 'Run me', seq: 1 }
+        if (request.method === 'prompt') return { accepted: true }
+        throw new Error('unexpected gateway call')
+      }),
+    }
+    const task = { ...configuredTask(), mode: 'workspace-superagent-worker', permission }
+    await expect(new HostExecutionRunner(gateway, commands, workspaceRegistry()).launch(task)).resolves.toBe('session-a')
+    expect(gateway.invoke.mock.calls[0]?.[0].args).toEqual({ request: { workspaceId: 'workspace-a' } })
+    expect(commands.execute).toHaveBeenCalledWith('session-a', '/permission ' + permission, expect.anything())
+  })
+
   it('validates and applies workspace, preset, and permission before the task prompt', async () => {
     const order: string[] = []
     const promptPayloads: unknown[] = []

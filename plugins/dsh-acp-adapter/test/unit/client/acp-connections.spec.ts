@@ -54,9 +54,16 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Input: 'Input',
   Menu: 'Menu',
   Tag: 'Tag',
+  Modal: 'Modal',
+  IconChevronRightOutlineMedium: 'ChevronRight',
   IconChevronDownOutlineMedium: 'Chevron',
+  IconCodeOutlineMedium: 'Code',
+  IconCopyOutlineMedium: 'Copy',
+  IconEllipsisOutlineMedium: 'Ellipsis',
   IconPlusOutlineMedium: 'Plus',
   IconRefreshOutlineMedium: 'Refresh',
+  IconSettingsOutlineMedium: 'Settings',
+  IconTrashOutlineMedium: 'Trash',
 }))
 import { AcpSection } from '../../../src/client/ui/AcpSection.ts'
 
@@ -137,6 +144,7 @@ function setup(presentation: 'management' | false = 'management') {
   const panel: AcpSectionWire = {
     refreshHealth: vi.fn(),
     refreshAgentHealth: vi.fn(),
+    setModelHidden: vi.fn(),
     saveAgent: vi.fn(async () => undefined),
     deleteAgent: vi.fn(async () => undefined),
     countBoundSessions: vi.fn(async () => 2),
@@ -173,6 +181,14 @@ beforeEach(() => {
   hooks.effects.length = 0
 })
 describe('Provider 管理', () => {
+  function menuWith(nodes: Element[], id: string) {
+    const menu = nodes.find(
+      (node) => node.type === 'Menu' && (node.props.items as { id: string }[]).some((item) => item.id === id),
+    )
+    expect(menu, id).toBeDefined()
+    return menu!
+  }
+
   it('沿用插件页，并通过稳定 ID 显示实例、认证未知及只读 ID', () => {
     expect(
       setup(false)
@@ -194,12 +210,11 @@ describe('Provider 管理', () => {
     const { panel, render, click } = setup()
     const nodes = render()
     expect(panel.refreshHealth).toHaveBeenCalledExactlyOnceWith()
-    click(nodes, 'providerCheckAll')
+    ;(menuWith(nodes, 'check').props.onSelect as (id: string) => void)('check')
     expect(panel.refreshHealth).toHaveBeenLastCalledWith(true)
-    click(nodes, 'providerCheck')
+    click(nodes, 'providerRefreshModels')
     expect(panel.refreshAgentHealth).toHaveBeenCalledExactlyOnceWith('codex')
-    const toggle = nodes.find((node) => node.props.role === 'switch')!
-    await (toggle.props.onClick as () => Promise<void>)()
+    ;(menuWith(nodes, 'toggle').props.onSelect as (id: string) => void)('toggle')
     await Promise.resolve()
     expect(panel.saveAgent).toHaveBeenCalledWith(
       'codex',
@@ -212,14 +227,16 @@ describe('Provider 管理', () => {
     const { render, state, find } = setup()
     state.settings.writable = false
     const nodes = render()
-    expect(find(nodes, '+ providerAdd').props.disabled).toBe(true)
-    expect(find(nodes, 'providerCheck').props.disabled).toBe(false)
-    expect(nodes.filter((node) => node.props.role === 'switch').every((node) => node.props.disabled)).toBe(true)
+    expect(find(nodes, 'providerAddShort').props.disabled).toBe(true)
+    expect(find(nodes, 'providerRefreshModels').props.disabled).toBe(false)
+    expect(menuWith(nodes, 'toggle').props.items).toContainEqual(
+      expect.objectContaining({ id: 'toggle', disabled: true }),
+    )
   })
 
   it('三步向导保留同类型多实例，Escape 取消不保存', () => {
     const { render, click, panel } = setup()
-    click(render(), '+ providerAdd')
+    click(render(), 'providerAddShort')
     let nodes = render()
     const type = elements(nodes.find((node) => node.props['data-provider-wizard'] === 0)).find(
       (node) => node.type === 'button' && text(node).startsWith('Codex'),

@@ -30,6 +30,8 @@ import { RequestAuditor, type NativeAuditReplay, type PassiveSessionPersistence,
 import { ROUTER_PROMPT, WORKER_PROMPT, ACTION_PROMPT, GENUI_PROMPT, DELEGATION_PROMPT, MEMORY_PROMPT, TODO_WRITE_PROMPT, SKILLS_PROMPT, GOALS_PROMPT, WORKER_SANDBOX_PROMPT, PROMPT_PACKAGE_VERSION, PROMPT_PACKAGE_HASH } from '../prompts/package.js';
 import { DELEGATE_TOOL, delegateToolDefinition, readDelegationToolArgs, type DelegateInvocation } from '../tools/delegate.js';
 import type { DelegationRecord } from '../app/delegation/launch.js';
+import type { WorkerSessionService } from '../app/delegation/worker-session.js';
+import { WORKER_SESSION_TOOLS, readWorkerOperation, readWorkerTask, workerSessionToolDefinitions } from '../tools/worker-session.js';
 import type { Evidence, Identity, Versions, RequestAuditBasis } from '../storage/types.js';
 import { DEFAULT_BOT_NAME, DEFAULT_CHAT_SOUL, formatSoulPrompt, nativeChatModel, type ChatContent, type ChatModelSelection, type ChatSoulConfig } from '../app/health/chat-input.js';
 
@@ -121,6 +123,7 @@ export interface RuntimeConfig {
   readonly enableWorkerSandbox?: boolean;
   /** 受信 Host 的派工入口；缺失时不注册派工工具。 */
   readonly delegation?: { start(sessionId: string, operationId: string, taskId: string): Promise<DelegationRecord> };
+  readonly workerSessions?: Pick<WorkerSessionService, 'start' | 'read' | 'cancel' | 'resume'>;
 }
 export const LEGACY_ROUTER_MAX_TOKENS = 1000;
 export interface StreamChunkLike {
@@ -379,6 +382,7 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
       (agent.session.header.agentPreset !== ROUTER_PRESET || publications.get(agent)?.ready === true),
     preset: agent => agent.session.header.agentPreset, workspace, policy: config.currentPolicy,
     hasForegroundInput: agent => routerInputs.get(agent)?.foreground === true,
+    hasScheduledInput: agent => routerInputs.get(agent)?.scheduled === true,
     isScheduledSession: agent => !disposed && scheduledScoped.has(agent) && agent.session.header.agentPreset === SCHEDULE_PRESET &&
       isNativeRoot(agents, agent) && (agent.session.header.cwd === undefined || agent.session.header.cwd === workspacePath) &&
       workspace(agent) === config.workspaceId,
@@ -520,10 +524,10 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
       if (failures.length > 1) throw new AggregateError(failures, 'ATTACHMENT_CLEANUP_FAILED');
     })();
   };
-  const foregroundRouterInput = (exec: ToolExec) => {
+  const foregroundRouterInput = (exec: ToolExec, allowScheduled = false) => {
     const lease = authority.capture(exec);
     const input = exec.agent && routerInputs.get(exec.agent);
-    if (lease.role !== 'router' || !input?.foreground || input.turn === undefined ||
+    if (lease.role !== 'router' || !input?.foreground || (input.scheduled && !allowScheduled) || input.turn === undefined ||
         !input.ids?.size || input.fingerprint !== lease.fingerprint) throw new CallerDenied('PROPOSAL_NOT_ADMITTED');
     lease.assertCurrent();
     return { session: exec.agent!.id, turn: input.turn };
@@ -534,7 +538,7 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
   };
   const genuiInput = (exec: ToolExec) => {
     if (!config.genuiViews) throw new CallerDenied('GENUI_NOT_ADMITTED');
-    return foregroundRouterInput(exec);
+    return foregroundRouterInput(exec, true);
   };
   const memoryWriteInput = (exec: ToolExec) => {
     if (!config.memory?.saveMemory || !config.memory?.deleteMemory) throw new CallerDenied('MEMORY_WRITE_NOT_ADMITTED');
@@ -569,8 +573,15 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
         if (exec.name === SKILL_WRITE_TOOLS[0]) { skillWriteInput(exec); return undefined; }
         if (exec.name === GOAL_WRITE_TOOLS[0]) { goalWriteInput(exec); return undefined; }
         if (config.pluginBridge?.()?.isEnabledPluginActionTool(exec.name)) { foregroundRouterInput(exec); return undefined; }
-        // 派工工具在 execute 内自行核验前台 Router、授权与卡片准入。
-        if (exec.name === DELEGATE_TOOL) return undefined;
+        if (exec.name === DELEGATE_TOOL) { foregroundRouterInput(exec); return undefined; }
+        if ((WORKER_SESSION_TOOLS as readonly string[]).includes(exec.name)) {
+          if (!config.workerSessions) throw new CallerDenied('WORKER_SESSION_UNAVAILABLE');
+          const lease = authority.capture(exec);
+          if (lease.role !== 'router' || !lease.actions.includes('read')) throw new CallerDenied('WORKER_SESSION_ROLE_DENIED');
+          if (exec.agent && routerInputs.get(exec.agent)?.scheduled) throw new CallerDenied('WORKER_SESSION_NOT_FOREGROUND');
+          if (exec.name !== WORKER_SESSION_TOOLS[1]) foregroundRouterInput(exec);
+          lease.assertCurrent(); return undefined;
+        }
         const lease = authority.capture(exec);
         if (lease.role === 'router' && !lease.tools.includes(exec.name)) {
           return lease.tools.length
@@ -776,6 +787,25 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
           }));
           own.push(agent.ctx.systemPrompt.section({ name: 'workspace-superagent-genui', order: 51.5, text: GENUI_PROMPT }));
         }
+        if (agent.session.header.agentPreset === ROUTER_PRESET && config.workerSessions) {
+          const workers = config.workerSessions;
+          for (const definition of workerSessionToolDefinitions<NativeAgent>(async (name, args, exec) => {
+            const lease = authority.capture(exec);
+            if (exec.agent !== agent || lease.role !== 'router' || !lease.actions.includes('read')) throw new CallerDenied('WORKER_SESSION_ROLE_DENIED');
+            if (name === WORKER_SESSION_TOOLS[1]) return workers.read(agent.id, readWorkerOperation(args), exec.signal);
+            const foreground = foregroundRouterInput(exec);
+            const admitted = routerInputs.get(agent);
+            if (admitted?.scheduled) throw new CallerDenied('WORKER_SESSION_NOT_FOREGROUND');
+            if (name === WORKER_SESSION_TOOLS[2]) return workers.cancel(agent.id, readWorkerOperation(args), exec.signal);
+            if (name === WORKER_SESSION_TOOLS[3]) return workers.resume(agent.id, readWorkerOperation(args), exec.signal);
+            const task = readWorkerTask(args);
+            // 同一用户请求中的相同任务去重；换一个 tool callId 不能重复开会话。
+            const operationId = 'worker:' + fingerprint({ session: agent.id, requestId: admitted!.requestId, turn: foreground.turn, task });
+            const record = await workers.start(agent.id, operationId, task, exec.signal);
+            lease.assertCurrent();
+            return { ...record, status: record.phase === 'accepted' ? 'accepted' : record.phase === 'rejected' ? 'rejected' : 'unknown' };
+          })) own.push(agent.ctx.tools.register(definition as unknown as ReturnType<typeof readToolDefinitions<NativeAgent>>[number]));
+        }
         if (agent.session.header.agentPreset === ROUTER_PRESET && config.delegation) {
           const delegation = config.delegation;
           const definition = delegateToolDefinition<NativeAgent>(async (args, exec) => {
@@ -783,7 +813,7 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
             const lease = authority.capture(exec);
             if (lease.role !== 'router') throw new CallerDenied('DELEGATION_ROLE_DENIED', '只有主理可以在前台请求中发起派工。');
             const admitted = routerInputs.get(agent);
-            if (!admitted?.foreground || admitted.turn === undefined || admitted.fingerprint !== lease.fingerprint) {
+            if (!admitted?.foreground || admitted.scheduled || admitted.turn === undefined || admitted.fingerprint !== lease.fingerprint) {
               throw new CallerDenied('DELEGATION_NOT_ADMITTED', '当前请求不是已接纳的前台主理轮次，不能派工。');
             }
             if (!lease.actions.includes('read')) throw new CallerDenied('DELEGATION_READ_REQUIRED');
@@ -967,7 +997,7 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
         const table = steps.get(payload.agent) ?? new Map<string, Step>(); steps.set(payload.agent, table); table.set(payload.turn + '/' + payload.step, expected);
         if (result.kind !== 'enter') return result;
         const input = lease.role === 'router' ? routerInputs.get(payload.agent) : undefined;
-        if (input?.foreground) input.turn = payload.turn;
+        if (input) input.turn = payload.turn;
         const executionGeneration = lease.executionId && lease.taskId ? store.readExecutionAuditGeneration(lease.taskId,lease.executionId) : undefined;
         if (lease.executionId && executionGeneration === undefined) throw new CallerDenied('EXECUTION_GENERATION_UNKNOWN');
         const current = () => {
@@ -1364,7 +1394,7 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
         if (await sessions.flush(agent.session) !== true) throw new CallerDenied('DURABILITY_REQUIRED');
       });
     },
-    async submitRouterInput(input: string | ChatContent[], signal: AbortSignal, foreground?: { requestId: string; assertCurrent(): void }): Promise<void> {
+    async submitRouterInput(input: string | ChatContent[], signal: AbortSignal, foreground?: { requestId: string; assertCurrent(): void }, backgroundRequestId?: string): Promise<void> {
       const content: ChatContent[] = typeof input === 'string' ? [{ type: 'text', text: input }] : input;
       available(); const id = store.manager().sessionId, agent = id && owner.owned(store, id);
       if (!agent || publications.get(agent)?.ready !== true) throw new CallerDenied('INSTALLATION_REQUIRED');
@@ -1373,7 +1403,7 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
       await agent.runMaintenance(async maintenance => {
         maintenance.throwIfAborted(); signal.throwIfAborted();
         foreground?.assertCurrent();
-        const requestId = foreground?.requestId ?? randomUUID();
+        const requestId = foreground?.requestId ?? backgroundRequestId ?? randomUUID();
         const delivered = agent.session.deriveMessages().find(message => message.source?.rpcId === requestId);
         if (delivered) {
           if (content.every(part => part.type === 'text') && fingerprint(delivered.content) !== fingerprint(content)) throw new CallerDenied('REQUEST_ID_REUSED');
@@ -1437,7 +1467,10 @@ export function createRuntime(ctx: RuntimeContext, store: StewardStore, config: 
   disposers.push(ctx.on('session/event', (rawSession, rawEvent) => {
     if ((rawEvent as { readonly imSynthetic?: boolean } | undefined)?.imSynthetic === true) return;
     const session = rawSession as NativeSession, event = rawEvent as NativeEvent, agent = agents.get(session.id);
-    if (agent && agent.session === session && event.type === 'turn/end' && routerInputs.get(agent)?.foreground) routerInputs.delete(agent);
+    if (agent && agent.session === session && event.type === 'turn/end') {
+      const input = routerInputs.get(agent), turn = (event.data as { turn?: number }).turn;
+      if (input && (input.turn === undefined || input.turn === turn)) routerInputs.delete(agent);
+    }
     if (!agent || agent.session !== session || !scoped.has(agent) || !['assistant/message','assistant/attempt'].includes(event.type)) return;
     const data = event.data as { turn: number; step: number }, step = steps.get(agent)?.get(data.turn + '/' + data.step);
     if (!step?.sessionIdentity) { config.fault?.(new CallerDenied('REQUEST_ANCHOR_MISSING')); return; }

@@ -22,7 +22,7 @@ type ScheduleTarget =
   | { kind: 'new_once'; sessionId?: string; create?: { cwd?: string; agentPreset?: string } }
   | { kind: 'new'; create?: { cwd?: string; agentPreset?: string } };
 type ScheduleRequest = { title: string; prompt: string; timing: Timing; target: ScheduleTarget };
-type ScheduleResult = { id: string; scheduledAt?: string; code?: string; target?: ScheduleTarget };
+type ScheduleResult = { id: string; scheduledAt?: string; code?: string; target?: ScheduleTarget; updatedAt?: number | null };
 type ScheduleCatalogEntry = ScheduleResult & {
   status?: string;
   involvedSessionIds?: readonly string[];
@@ -36,6 +36,7 @@ interface ScheduleFace {
   edit?(request: {
     id: string;
     action: 'update';
+    expectedUpdatedAt?: number | null;
     patch: { target: { kind: 'session'; sessionId: string } };
   }): Promise<unknown>;
 }
@@ -79,7 +80,6 @@ interface Bindings {
   }>;
   parseTaskDraft?(text: string): Promise<ParsedTaskDraft>;
   isLegacyScheduledSession?(sessionId: string): boolean | Promise<boolean>;
-  cleanupLegacyScheduledSessions?(activeRouterSessionId: string): void | Promise<void>;
   check(): void;
   now?(): number;
 }
@@ -170,6 +170,14 @@ export class ActionService {
     if (legacy && typeof legacy.code !== 'string') return legacy;
     return current;
   }
+  async #usesLegacyScheduleTarget(target: ScheduleTarget | undefined, session: string, owned: boolean): Promise<boolean> {
+    if (target?.kind === 'new_once' || target?.kind === 'new') {
+      return target.create?.agentPreset === SCHEDULE_PRESET
+        && (target.create.cwd === this.binding.workspacePath || (target.create.cwd === undefined && owned));
+    }
+    return target?.kind === 'session' && target.sessionId !== session
+      && (await this.binding.isLegacyScheduledSession?.(target.sessionId)) === true;
+  }
   async refreshScheduleStates(session: string): Promise<boolean> {
     if (!session) return false;
     let schedule: ScheduleFace;
@@ -214,23 +222,17 @@ export class ActionService {
           if (!entry || typeof entry.id !== 'string' || typeof entry.code === 'string') continue;
           const isDirectTarget = entry.target?.kind === 'session' && entry.target.sessionId === session;
           const isInvolved = Array.isArray(entry.involvedSessionIds) && entry.involvedSessionIds.includes(session);
-          const isLegacyNewOnce = entry.target?.kind === 'new_once'
-            && entry.target.create?.agentPreset === SCHEDULE_PRESET;
-          const isLegacySession = entry.target?.kind === 'session'
-            && entry.target.sessionId !== session
-            && typeof entry.target.sessionId === 'string'
-            && (await this.binding.isLegacyScheduledSession?.(entry.target.sessionId)) === true;
-          const isOwned = proposalIds.has(entry.id) || isDirectTarget || isInvolved || isLegacyNewOnce || isLegacySession;
+          const owned = proposalIds.has(entry.id);
+          const isLegacyTarget = await this.#usesLegacyScheduleTarget(entry.target, session, owned);
+          const isOwned = owned || isDirectTarget || isInvolved || isLegacyTarget;
           if (!isOwned) continue;
           matched.add(entry.id);
           this.#deletedSchedules.delete(entry.id);
-          if (
-            typeof schedule.edit === 'function' &&
-            (entry.target?.kind !== 'session' || entry.target.sessionId !== session)
-          ) {
+          if (typeof schedule.edit === 'function' && isLegacyTarget) {
             await schedule.edit({
               id: entry.id,
               action: 'update',
+              ...(entry.updatedAt !== undefined ? { expectedUpdatedAt: entry.updatedAt } : {}),
               patch: { target: { kind: 'session', sessionId: session } },
             }).catch(() => undefined);
           }
@@ -239,11 +241,6 @@ export class ActionService {
       } catch {
         // ignore catalog sync errors
       }
-    }
-    try {
-      await this.binding.cleanupLegacyScheduledSessions?.(session);
-    } catch {
-      // ignore archive cleanup errors
     }
     return this.hasDailyReviewSchedule(session);
   }
@@ -765,11 +762,12 @@ export class ActionService {
           found = row.result ?? undefined;
           if (
             typeof schedule.edit === 'function' &&
-            (viewed.target?.kind !== 'session' || viewed.target.sessionId !== session)
+            await this.#usesLegacyScheduleTarget(viewed.target, session, true)
           ) {
             await schedule.edit({
               id: viewed.id,
               action: 'update',
+              ...(viewed.updatedAt !== undefined ? { expectedUpdatedAt: viewed.updatedAt } : {}),
               patch: { target: { kind: 'session', sessionId: session } },
             }).catch(() => undefined);
           }

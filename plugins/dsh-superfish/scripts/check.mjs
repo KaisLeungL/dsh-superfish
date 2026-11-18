@@ -20,5 +20,6 @@ check('只引用宿主 React',requires.length===1&&requires[0]==='react'&&typeof
 check('无 Chat 复制或业务操作',!client.includes('sessionController')&&!client.includes('createSession')&&!client.includes('runTask'));
 check('类型声明无失效 JSON 路径',!read('lib/types/client/index.d.ts').includes('../../locale'));
 const patchText=read('cordis.patch.yml');check('cordis.patch.yml 为顶层数组且含 insert 与预设',/^\s*-\s+/m.test(patchText)&&!/^plugins:/m.test(patchText)&&patchText.includes('- insert:')&&patchText.includes('preset-workspace-superagent-router'));
+check('大肥鱼仅注册一个预设', (patchText.match(/name: '@deepseek-ai\/dsh-agent-preset'/g) ?? []).length === 1);
 const hashes=Object.fromEntries(['package.json','cordis.patch.yml','lib/index.js','lib/preset.js','lib/client.js','locale/zh.json','locale/en.json','icon.png','icon.svg','skills/dsh-genui/SKILL.md','skills/dsh-quick-actions/SKILL.md','skills/skills-creator/SKILL.md','sdk-lock.json'].map(p=>[p,createHash('sha256').update(readFileSync(root+'/'+p)).digest('hex')]));
 const dir=resolve(root,'../../.superagent-product-lab/b04-deployment/check-'+randomUUID());mkdirSync(dir,{recursive:true});writeFileSync(dir+'/manifest-check.json',JSON.stringify({version:pkg.version,checks,hashes},null,2)+'\n');console.log(JSON.stringify({checks:checks.length,passed:true,hashes}));

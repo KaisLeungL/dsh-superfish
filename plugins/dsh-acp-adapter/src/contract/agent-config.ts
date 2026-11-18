@@ -41,6 +41,8 @@ export interface AcpStubAgentConfig {
   authBinding?: string
   /** 缺席视为启用；停用保留配置和绑定，阻止后续调用。 */
   enabled?: boolean
+  /** Model IDs hidden from this profile's selectable catalog. */
+  hiddenModelIds?: readonly string[]
   /** Display name; the selector group label is `<name> · ACP`. */
   name: string
   /** Executable probed per catalog refresh. */

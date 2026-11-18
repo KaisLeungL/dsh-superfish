@@ -34,11 +34,13 @@ import { createDailyMotto, type MottoLlm } from '../health/daily-motto.js';
 import { createChatSuggestions } from '../health/suggestions.js';
 import { PersonalService } from '../personal/service.js';
 import { DelegationService } from '../delegation/service.js';
+import { WorkerSessionService } from '../delegation/worker-session.js';
+import { nativeWorkerSessionHost, type WorkerExecution } from '../delegation/worker-session-host.js';
 import { delegationActivities, type ScheduleDeliverySnapshot, type ScheduleTriggerSource } from '../delegation/activity.js';
 import type { BoardLaunchFace } from '../delegation/launch.js';
 import { delegationTargetRejection } from '../delegation/guard.js';
 import type { CapturedTask } from '../projections/types.js';
-export interface HostAssembly { readonly store: StewardStore; readonly runtimeConfig: RuntimeConfig; readonly workspaceName?: string; readonly mottoPath?: string; readonly soulPath?: string; readonly contextGrants?: ContextAccess['grants']; readiness?(): string | null }
+export interface HostAssembly { readonly store: StewardStore; readonly runtimeConfig: RuntimeConfig; readonly execution?: WorkerExecution; readonly workspaceName?: string; readonly mottoPath?: string; readonly soulPath?: string; readonly contextGrants?: ContextAccess['grants']; readiness?(): string | null }
 function readStoredSoul(path: string | undefined): ChatSoulConfig | undefined {
   if (!path) return undefined;
   try {
@@ -189,50 +191,14 @@ export function installHealthHost(ctx: Context): void {
       ),
       isLegacyScheduledSession: async targetSessionId => {
         if (!targetSessionId || targetSessionId === store.manager().sessionId) return false;
-        if (targetSessionId.startsWith('session-superagent-')) return true;
         try {
-          const live = (scoped.get('sessions') as { get?(id: string): { header?: { agentPreset?: string; cwd?: string } } | undefined } | undefined)?.get?.(targetSessionId);
-          if (live?.header) {
-            return live.header.agentPreset === SCHEDULE_PRESET;
-          }
-          const persistence = scoped.get('sessionPersistence') as { stat?(id: string): Promise<{ header?: { agentPreset?: string; cwd?: string } } | undefined> } | undefined;
-          const stored = await persistence?.stat?.(targetSessionId);
-          return stored?.header?.agentPreset === SCHEDULE_PRESET;
+          type Header = { agentPreset?: string; cwd?: string };
+          const sessions = scoped.get('sessions') as { get?(id: string): { header?: Header } | undefined } | undefined;
+          const persistence = scoped.get('sessionPersistence') as { stat?(id: string): Promise<{ header?: Header } | undefined> } | undefined;
+          const header = sessions?.get?.(targetSessionId)?.header ?? (await persistence?.stat?.(targetSessionId))?.header;
+          return header?.agentPreset === SCHEDULE_PRESET && header.cwd === workspace.path;
         } catch {
           return false;
-        }
-      },
-      cleanupLegacyScheduledSessions: async activeRouterSessionId => {
-        try {
-          const wsList = typeof registry.list === 'function'
-            ? (registry.list() as readonly { id: string; sessionIds?: readonly string[] }[])
-            : [];
-          const rawArchived = (registry as { archivedSessionIds?: readonly string[] }).archivedSessionIds;
-          const archived = new Set<string>(Array.isArray(rawArchived) ? rawArchived : []);
-          const archiveFn = (registry as { archiveSession?(id: string): Promise<void> }).archiveSession;
-          if (typeof archiveFn !== 'function') return;
-          const sessionsHost = scoped.get('sessions') as { get?(id: string): { header?: { agentPreset?: string } } | undefined } | undefined;
-          const persistence = scoped.get('sessionPersistence') as { stat?(id: string): Promise<{ header?: { agentPreset?: string } } | undefined> } | undefined;
-          for (const ws of wsList) {
-            for (const sid of ws.sessionIds ?? []) {
-              if (!sid || sid === activeRouterSessionId || archived.has(sid)) continue;
-              let isLegacy = sid.startsWith('session-superagent-');
-              if (!isLegacy) {
-                const live = sessionsHost?.get?.(sid);
-                if (live?.header) {
-                  isLegacy = live.header.agentPreset === SCHEDULE_PRESET;
-                } else {
-                  const stored = await persistence?.stat?.(sid).catch(() => undefined);
-                  isLegacy = stored?.header?.agentPreset === SCHEDULE_PRESET;
-                }
-              }
-              if (isLegacy) {
-                await archiveFn.call(registry, sid).catch(() => undefined);
-              }
-            }
-          }
-        } catch {
-          // ignore archive cleanup errors
         }
       },
       check() {
@@ -282,25 +248,6 @@ export function installHealthHost(ctx: Context): void {
           const snapshot = (face as NativeBoard).snapshot();
           const rejection = delegationTargetRejection(snapshot, request);
           if (rejection) return rejection;
-          const targetTask = snapshot.tasks?.find(item => item.id === request.taskId) as
-            | { id: string; permission?: string; permissionConfirmedAt?: unknown }
-            | undefined;
-          if (
-            targetTask &&
-            targetTask.permission &&
-            targetTask.permission !== 'read-only' &&
-            targetTask.permissionConfirmedAt === undefined &&
-            typeof (face as { apply?: unknown }).apply === 'function'
-          ) {
-            try {
-              await (face as { apply(opId: string, action: unknown): unknown }).apply(
-                `confirm-permission:${request.operationId}`,
-                { kind: 'confirm-permission', taskId: request.taskId },
-              );
-            } catch {
-              // ignore if board implementation does not require or support confirm-permission
-            }
-          }
           const allBoardProjects = (() => { try { return runtimeConfig.currentPolicy(undefined).allBoardProjects === true; } catch { return false; } })();
           return await start({ operationId: request.operationId, taskId: request.taskId, ...(allBoardProjects ? {} : { workspaceId: request.workspaceId }), initiator: request.routerSessionId }) as Awaited<ReturnType<BoardLaunchFace['startWithReceipt']>>;
         },
@@ -418,7 +365,18 @@ export function installHealthHost(ctx: Context): void {
         if (timer) clearTimeout(timer);
       }
     };
+    const workerSessions = new WorkerSessionService(store.path + '.workers.sqlite', nativeWorkerSessionHost(
+      scoped, workspaceId, workspace.path, sessionId => {
+        assertScope();
+        const manager = store.manager();
+        if (manager.lifecycle !== 'running' || manager.bindingState !== 'bound' || manager.sessionId !== sessionId) scopeError();
+      }, { model: assembly.runtimeConfig.model, ...assembly.execution },
+    ));
+    scoped.effect(() => () => workerSessions.close());
+    const workerLifetime = new AbortController();
+    scoped.effect(() => () => workerLifetime.abort());
     const personalActivities = async (sessionId: string) => {
+      void notifyWorkers();
       const records = delegation.list(sessionId);
       const unresolved = records.filter(record => record.state === 'unknown');
       if (unresolved.length) {
@@ -437,7 +395,17 @@ export function installHealthHost(ctx: Context): void {
       let tasks: readonly CapturedTask[] = [];
       try { tasks = runtime.source.capture().tasks; } catch { /* 回执本身仍可展示。 */ }
       const scheduleTriggers = await readScheduleTriggers(sessionId).catch(() => []);
-      return { available: true, items: delegationActivities(latest, tasks, scheduleTriggers) };
+      const workers = await Promise.all(workerSessions.list(sessionId).map(async record => {
+        const observation = await workerSessions.read(sessionId, record.operationId, workerLifetime.signal)
+          .catch(() => ({ status: 'unknown' as const }));
+        return { id: record.operationId, title: record.title,
+          status: observation.status === 'completed' ? 'succeeded' : observation.status,
+          updatedAt: 'observedAt' in observation && typeof observation.observedAt === 'number' ? observation.observedAt : record.updatedAt,
+          worker: '独立会话 Worker', taskId: '', sessionId: record.sessionId,
+          events: [{ title: record.phase === 'accepted' ? '任务已提交到执行会话' : '委派结果待核实', at: record.updatedAt },
+            ...('summary' in observation && observation.summary ? [{ title: 'Worker 回传结果', at: observation.observedAt ?? record.updatedAt, summary: observation.summary }] : [])] };
+      }));
+      return { available: true, items: [...delegationActivities(latest, tasks, scheduleTriggers), ...workers].sort((a, b) => b.updatedAt - a.updatedAt) };
     };
     const personal = new PersonalService(store.path + '.personal.sqlite', {
       workspaceId,
@@ -681,6 +649,7 @@ export function installHealthHost(ctx: Context): void {
         },
       }),
       delegation: { start: (sessionId: string, operationId: string, taskId: string) => delegation.start(sessionId, operationId, taskId) },
+      workerSessions,
       currentPolicy: bindLifecyclePolicy(agent => {
         const base = assembly.runtimeConfig.currentPolicy(agent);
         if (!pluginRegistry.hasMutations()) return base;
@@ -694,6 +663,31 @@ export function installHealthHost(ctx: Context): void {
       }, () => coordinator) };
     try { runtime = createRuntime(scoped as unknown as RuntimeContext, store, runtimeConfig, owner); }
     catch { failure = '原生运行时装配失败，保持不可用。'; return; }
+    let notifyingWorkers = false;
+    async function notifyWorkers(): Promise<void> {
+      if (notifyingWorkers || workerLifetime.signal.aborted || !runtime || runtime.isRouterBusy()) return;
+      notifyingWorkers = true;
+      try {
+        const ownerId = store.manager().sessionId;
+        if (!ownerId) return;
+        const notices = await workerSessions.notices(ownerId, workerLifetime.signal);
+        for (const notice of notices) {
+          if (runtime.isRouterBusy()) break;
+          // 回传不携带 foreground 授权，不能据此启动下一项任务。
+          await runtime.submitRouterInput(notice.text, workerLifetime.signal, undefined, notice.id);
+          workerSessions.delivered(ownerId, notice.id);
+        }
+      } catch { /* 暂不可投递时保留原 outbox，下次会话事件或活动读取时重试。 */ }
+      finally { notifyingWorkers = false; }
+    }
+    scoped.on('session/event', (session: { id: string }, event: { type: string }) => {
+      if (event.type !== 'turn/end') return;
+      try {
+        const ownerId = store.manager().sessionId;
+        if (!ownerId || (session.id !== ownerId && !workerSessions.list(ownerId).some(row => row.sessionId === session.id))) return;
+        setImmediate(() => { void notifyWorkers(); });
+      } catch { /* 当前主理未就绪时不消费回传。 */ }
+    });
     let componentFault: string | null = null;
     const fault = (_error: unknown) => { componentFault = '存在未决组件故障，请核对原件和持久状态。'; };
     const evals = new EvalDeadlines(store, () => { if (!coordinator) throw Error('LIFECYCLE_NOT_READY'); return coordinator.lease(); }, fault);

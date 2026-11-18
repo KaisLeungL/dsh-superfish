@@ -14,7 +14,7 @@ import { catalogEntryOf } from './catalog.ts'
 import { ACP_AGENT_ID_PATTERN, effectiveRuntimeOf, catalogIdOf } from '../../contract/agent-config.ts'
 import type { AcpAgentConfig, AcpAgentId as AcpAgentRuntimeId } from '../../contract/agent-config.ts'
 import { ACP_AGENT_CONFIG_STATES } from '../../contract/remote.ts'
-import type { AcpAgentConfigState } from '../../contract/remote.ts'
+import type { AcpAgentConfigState, AcpModelCatalogView } from '../../contract/remote.ts'
 export {
   ACP_AGENT_IDS as ACP_AGENT_RUNTIME_IDS,
   ACP_AGENT_ID_PATTERN,
@@ -239,7 +239,7 @@ export interface DraftValidation {
   readonly command?: DraftError
   readonly env?: DraftError
   /** The parsed, storage-ready config; undefined while any error stands. */
-  readonly config?: AcpAgentConfig
+  readonly config?: Omit<AcpAgentConfig, 'hiddenModelIds'>
 }
 
 /** 校验实例字段及 ID 唯一性；同类型实例通过稳定 ID 区分。 */
@@ -408,6 +408,7 @@ export interface AcpProviderHealth {
   version: string | null
   /** Configuration state derived by the Host. */
   state: AcpAgentConfigState
+  modelCatalog?: AcpModelCatalogView
   probe:
     | { status: 'never'; at: null }
     | {
@@ -451,7 +452,7 @@ export function decodeHealthResponse(body: unknown): readonly AcpProviderHealth[
 
 function decodeHealthRow(raw: unknown): AcpProviderHealth | undefined {
   if (!isPlainObject(raw)) return undefined
-  const { id, name, command, args, loginHint, executable, version, state, probe } = raw as Record<string, unknown>
+  const { id, name, command, args, loginHint, executable, version, state, probe, modelCatalog } = raw
   if (typeof id !== 'string' || typeof name !== 'string' || typeof command !== 'string') return undefined
   if (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string')) return undefined
   if (!(typeof loginHint === 'string' || loginHint === null)) return undefined
@@ -461,6 +462,8 @@ function decodeHealthRow(raw: unknown): AcpProviderHealth | undefined {
   if (typeof state !== 'string' || !(ACP_AGENT_CONFIG_STATES as readonly string[]).includes(state)) return undefined
   const probeRow = decodeProbeRow(probe)
   if (probeRow === undefined) return undefined
+  const catalog = decodeModelCatalog(modelCatalog)
+  if (modelCatalog !== undefined && catalog === undefined) return undefined
   return {
     id,
     name,
@@ -470,8 +473,20 @@ function decodeHealthRow(raw: unknown): AcpProviderHealth | undefined {
     executable,
     version,
     state: state as AcpAgentConfigState,
+    ...(catalog === undefined ? {} : { modelCatalog: catalog }),
     probe: probeRow,
   }
+}
+
+function decodeModelCatalog(raw: unknown): AcpModelCatalogView | undefined {
+  if (!isPlainObject(raw) || typeof raw.at !== 'number' || !Number.isFinite(raw.at) || !Array.isArray(raw.models))
+    return undefined
+  const models: AcpModelCatalogView['models'][number][] = []
+  for (const model of raw.models) {
+    if (!isPlainObject(model) || typeof model.id !== 'string' || typeof model.name !== 'string') return undefined
+    models.push({ id: model.id, name: model.name })
+  }
+  return { at: raw.at, models }
 }
 
 function decodeProbeRow(raw: unknown): AcpProviderHealth['probe'] | undefined {

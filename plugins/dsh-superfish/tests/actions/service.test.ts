@@ -486,7 +486,6 @@ test('createScheduleDirect 与 readScheduleWriteCandidates 支持直接创建定
 test('大肥鱼定时任务直接投递至大肥鱼主会话，且 refreshScheduleStates 与 open 自动迁移存量 new_once 与旧定时会话任务', async () => {
   const createdRequests: Record<string, unknown>[] = [];
   const editedPatches: { id: string; patch: Record<string, unknown> }[] = [];
-  const cleanedForSessions: string[] = [];
   const catalogEntries: {
     id: string;
     status: string;
@@ -499,9 +498,18 @@ test('大肥鱼定时任务直接投递至大肥鱼主会话，且 refreshSchedu
       target: {
         kind: 'new_once',
         sessionId: 'session-reserved-1',
-        create: { cwd: '/other-workspace', agentPreset: 'workspace-superagent-scheduled' },
+        create: { cwd: '/fixture', agentPreset: 'workspace-superagent-scheduled' },
       },
       involvedSessionIds: ['session-reserved-1'],
+    },
+    {
+      id: 'schedule-other-workspace',
+      status: 'active',
+      target: {
+        kind: 'new_once',
+        create: { cwd: '/other-workspace', agentPreset: 'workspace-superagent-scheduled' },
+      },
+      involvedSessionIds: [],
     },
     {
       id: 'schedule-legacy-ran-once',
@@ -529,7 +537,6 @@ test('大肥鱼定时任务直接投递至大肥鱼主会话，且 refreshSchedu
     workspacePath: '/fixture',
     check() {},
     isLegacyScheduledSession: sid => sid === 'session-legacy-scheduled-1',
-    cleanupLegacyScheduledSessions: sid => { cleanedForSessions.push(sid); },
     board: () => undefined,
     schedule: () => ({
       previewConfirmedCreate: (req: Record<string, unknown>) => {
@@ -612,12 +619,15 @@ test('大肥鱼定时任务直接投递至大肥鱼主会话，且 refreshSchedu
         patch: { target: { kind: 'session', sessionId: routerSessionId } },
       },
     ]);
-    assert.deepEqual(cleanedForSessions, [routerSessionId]);
     const owned = svc.ownedScheduleIds(routerSessionId);
     assert.ok(owned.includes(created.resultId!));
     assert.ok(owned.includes('schedule-legacy-new-once'));
     assert.ok(owned.includes('schedule-legacy-ran-once'));
     assert.equal(owned.includes('schedule-unrelated'), false);
+    assert.equal(owned.includes('schedule-other-workspace'), false);
+    editedPatches.length = 0;
+    await svc.refreshScheduleStates(routerSessionId);
+    assert.deepEqual(editedPatches, []);
   } finally {
     svc.close();
   }
